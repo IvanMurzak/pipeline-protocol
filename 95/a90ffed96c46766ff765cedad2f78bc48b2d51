@@ -1,0 +1,26 @@
+package.json
+  s_f9bd48b89a0af2::t_89d9f7412a31d2 3
+src/records/records.test.ts
+  s_f9bd48b89a0af2::t_cce3c0b0e078a5 66-173
+  s_f9bd48b89a0af2::t_bd0b4e747bca19 2
+src/records/index.ts
+  s_f9bd48b89a0af2::t_d36756b3e81f18 4
+src/records/run-record.ts
+  s_f9bd48b89a0af2::t_7cd6a25b6fc493 1-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "95a90ffed96c46766ff765cedad2f78bc48b2d51",
+  "prompts": {},
+  "sessions": {
+    "s_f9bd48b89a0af2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cac9d280-0593-447c-a8f5-2a3ff91785c5",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Ivan Murzak <Ivan.D.Murzak@gmail.com>"
+    }
+  }
+}
