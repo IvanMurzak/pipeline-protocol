@@ -1,0 +1,23 @@
+{
+  // Standalone base config (inlined from the former monorepo tsconfig.base.json).
+  // Typecheck-only: `noEmit: true` here; the publishable build (tsconfig.build.json)
+  // extends this and overrides it to emit dist/ + .d.ts declarations.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true
+  },
+  "include": ["src"]
+}

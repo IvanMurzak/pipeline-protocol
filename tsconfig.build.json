@@ -1,0 +1,16 @@
+{
+  // Build config: the shared base pins `noEmit: true` (it exists only to
+  // typecheck), so the publishable build MUST override it to actually emit
+  // `dist/` + `.d.ts` declarations. Tests are excluded from the published output.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "dist", "node_modules"]
+}
