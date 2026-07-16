@@ -111,6 +111,44 @@ export const ExecutionOverridesSchema = z
 export type ExecutionOverrides = z.infer<typeof ExecutionOverridesSchema>;
 
 /**
+ * OPTIONAL per-run VARIABLES map a lease may carry (env-variables design, task
+ * `b1-protocol-lease-variables`, P6·protocol). Present ⇒ the runner maps each
+ * entry to one `--var NAME=value` flag on the pipeline's `${PP_*}` substitution
+ * engine — and ONLY on the START `pipeline drive` invocation, never on a
+ * resume/answer invocation (D11 runner corollary: a run whose `next.json`
+ * already froze a variables map at init rejects a repeated `--var`, mirroring
+ * that `execution_overrides` re-rides every invocation while `variables` does
+ * NOT). ABSENT ⇒ the pipeline's own declared defaults apply and the lease is
+ * byte-identical to a lease with no `variables` key — the load-bearing dispatch
+ * path is untouched for every run that predates this field.
+ *
+ * Keys are constrained to the `PP_[A-Z0-9_]+` grammar (D9 defense-in-depth) by
+ * THIS schema's own key predicate. Values are opaque, non-secret strings (D4) —
+ * `PP_*` values are contractually non-secret configuration (names, versions,
+ * URLs, flags), never masked or encrypted on this channel; secrets continue to
+ * use the existing job-JWT secrets-delivery path and never ride the lease.
+ *
+ * **Zod key-schema verdict — PIN, don't assume (recorded 2026-07-16, pinned
+ * `zod@3.25.76`, this package's exact dependency):** the two-argument
+ * `z.record(keySchema, valueSchema)` form in this pinned version DOES enforce
+ * the key schema — a key failing the `PP_` regex (e.g. `NOT_PP`) is REJECTED by
+ * `safeParse`/`parse`, not silently admitted. This is pinned by an explicit test
+ * in `server.test.ts` ("RunVariablesSchema key-regex verdict") so a future zod
+ * bump that regresses this behavior fails CI loudly instead of silently. This
+ * verdict does NOT excuse the cloud API boundary (task c1) from validating
+ * every variable name explicitly server-side before persisting/relaying a
+ * dispatch — defense-in-depth (D9) is deliberate, independent of what any one
+ * layer's schema library happens to enforce today. No entry-count / byte-size
+ * cap is expressed in this schema (64 entries / 4 KiB per the design) — that
+ * cap is enforced at the cloud API boundary, not in this wire-schema hot path.
+ */
+export const RunVariablesSchema = z.record(
+  z.string().regex(/^PP_[A-Z0-9_]+$/),
+  z.string(),
+);
+export type RunVariables = z.infer<typeof RunVariablesSchema>;
+
+/**
  * `lease` (server → agent) — offer a queued run to a runner whose labels match.
  * Carries the job/run identity, the pipeline reference, the label set the match
  * was made on, a SHORT-LIVED per-job JWT, and the SLUGS of the secrets the
@@ -131,6 +169,14 @@ export type ExecutionOverrides = z.infer<typeof ExecutionOverridesSchema>;
  * for this run (matrix runs sweep a grid of these). ABSENT ⇒ the pipeline's
  * own model/effort, and the lease is byte-identical to a lease with no
  * override — the load-bearing dispatch path is untouched for every normal run.
+ *
+ * ── Variables (env-variables design task b1, P6·protocol, ADDITIVE) ────────
+ * An OPTIONAL `variables` field ({@link RunVariablesSchema}) carries a per-run
+ * `PP_*` map the runner applies via `--var NAME=value` on the START invocation
+ * only (see the schema doc above for the resume/answer exclusion). ABSENT ⇒ no
+ * dispatched variables — the pipeline's own manifest defaults / declared
+ * variables apply, and the lease is byte-identical to a lease predating this
+ * field.
  *
  * ── Secrets (ARCHITECTURE §Security) ────────────────────────────────────────
  * Only `secret_slugs` (the NAMES of declared secrets) ride this message — never
@@ -167,6 +213,11 @@ export const LeaseMessageSchema = wireVariant("lease", {
    *  model/effort for this run; absent ⇒ the pipeline's own model/effort, and
    *  the lease is byte-identical to today's. */
   execution_overrides: ExecutionOverridesSchema.optional(),
+  /** OPTIONAL per-run `PP_*` variables map (env-variables design task b1) — see
+   *  the schema doc above. Present ⇒ the runner applies these via `--var` on
+   *  the start invocation only; absent ⇒ no dispatched variables, and the
+   *  lease is byte-identical to today's. */
+  variables: RunVariablesSchema.optional(),
 });
 export type LeaseMessage = z.infer<typeof LeaseMessageSchema>;
 
