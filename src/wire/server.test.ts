@@ -8,6 +8,7 @@ import {
   HeartbeatAckMessageSchema,
   LeaseMessageSchema,
   LeaseTaskSchema,
+  RunVariablesSchema,
   TASK_PIPELINE_UNRESOLVED,
   UploadAckMessageSchema,
 } from "./server.js";
@@ -153,6 +154,77 @@ describe("lease (server → agent job offer)", () => {
       lease({ execution_overrides: { model: "opus", reasoning_budget: 4096 } }),
     );
     expect((l.execution_overrides as Record<string, unknown>).reasoning_budget).toBe(4096);
+  });
+
+  // ── env-variables design task b1 (ADDITIVE optional `variables`) ────────────
+
+  test("variables is OPTIONAL: a lease without it still parses and has no key", () => {
+    const l = LeaseMessageSchema.parse(lease());
+    expect(l.variables).toBeUndefined();
+    expect("variables" in l).toBe(false);
+  });
+
+  test("round-trip with variables ABSENT is byte-identical to a pre-b1 lease (old readers unaffected)", () => {
+    // `toEqual` deep-compares by value, not key order, so it's unaffected by
+    // zod's `.parse()` re-ordering keys to declaration order (a pre-existing,
+    // harmless quirk unrelated to this change — `id`/`type` sort before the
+    // rest even in leases that predate `variables`). The cast sidesteps a
+    // `toEqual` overload that otherwise demands the literal `type: "lease"`
+    // discriminant on the plain object `lease()` returns.
+    const original = lease();
+    const parsed = LeaseMessageSchema.parse(original);
+    expect(parsed as Record<string, unknown>).toEqual(original);
+    expect("variables" in parsed).toBe(false);
+  });
+
+  test("a lease carries a variables map of PP_-prefixed keys", () => {
+    const l = LeaseMessageSchema.parse(
+      lease({ variables: { PP_TARGET_ENV: "prod", PP_DEBUG: "1" } }),
+    );
+    expect(l.variables).toEqual({ PP_TARGET_ENV: "prod", PP_DEBUG: "1" });
+  });
+
+  test("an empty variables map is structurally valid", () => {
+    expect(LeaseMessageSchema.safeParse(lease({ variables: {} })).success).toBe(true);
+  });
+
+  test("the variables field IS RunVariablesSchema", () => {
+    expect(LeaseMessageSchema.shape.variables.unwrap()).toBe(RunVariablesSchema);
+  });
+
+  test("variables rejects a non-string value", () => {
+    expect(RunVariablesSchema.safeParse({ PP_X: 5 }).success).toBe(false);
+    expect(
+      LeaseMessageSchema.safeParse(lease({ variables: { PP_X: 5 } })).success,
+    ).toBe(false);
+  });
+
+  // ── Zod key-schema verdict — PIN, don't assume (task b1 explicit requirement) ──
+  // VERDICT: REJECTED (enforced), zod 3.25.76 (this package's exact-pinned
+  // dependency). Full rationale + the c1 defense-in-depth caveat is on
+  // `RunVariablesSchema`'s JSDoc in `./server.ts` — this test just pins the
+  // behavior so a future zod bump that regresses it fails CI loudly.
+  test("RunVariablesSchema key-regex verdict: a non-PP_ key is REJECTED by the pinned zod version, not silently admitted", () => {
+    expect(RunVariablesSchema.safeParse({ PP_OK: "v" }).success).toBe(true);
+    const bad = RunVariablesSchema.safeParse({ NOT_PP: "v" });
+    expect(bad.success).toBe(false);
+  });
+
+  test("a lease with a bad (non-PP_) variable key is rejected end-to-end", () => {
+    expect(
+      LeaseMessageSchema.safeParse(lease({ variables: { NOT_PP: "x" } })).success,
+    ).toBe(false);
+  });
+
+  test("variables and execution_overrides + task can all coexist on one lease", () => {
+    const l = LeaseMessageSchema.parse(
+      lease({
+        execution_overrides: { model: "opus" },
+        variables: { PP_TARGET: "prod" },
+      }),
+    );
+    expect(l.execution_overrides).toEqual({ model: "opus" });
+    expect(l.variables).toEqual({ PP_TARGET: "prod" });
   });
 });
 
