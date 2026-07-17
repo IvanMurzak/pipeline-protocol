@@ -28,6 +28,36 @@ describe("heartbeat (agent → server)", () => {
     expect(HeartbeatMessageSchema.safeParse({ type: "heartbeat", runner_id: "r1", status: "bogus" }).success).toBe(false);
     expect(HeartbeatMessageSchema.safeParse({ type: "heartbeat" }).success).toBe(false);
   });
+
+  // ── D13 capability flag (crash-resilience task d1, ADDITIVE `runs_authoritative`) ──
+
+  test("runs_authoritative is OPTIONAL: a heartbeat without it still parses and has no key", () => {
+    const hb = HeartbeatMessageSchema.parse({ type: "heartbeat", runner_id: "r1", active_run_ids: [] });
+    expect(hb.runs_authoritative).toBeUndefined();
+    expect("runs_authoritative" in hb).toBe(false);
+  });
+
+  test("a pre-d1 heartbeat (no runs_authoritative) round-trips byte-identical (old readers unaffected)", () => {
+    const original = { type: "heartbeat", runner_id: "r1", active_run_ids: [], status: "online" };
+    const parsed = HeartbeatMessageSchema.parse(original);
+    expect(parsed as Record<string, unknown>).toEqual(original);
+  });
+
+  test("runs_authoritative: true is accepted and round-trips", () => {
+    const hb = HeartbeatMessageSchema.parse({
+      type: "heartbeat",
+      runner_id: "r1",
+      active_run_ids: ["run-a"],
+      runs_authoritative: true,
+    });
+    expect(hb.runs_authoritative).toBe(true);
+  });
+
+  test("runs_authoritative rejects a non-boolean value", () => {
+    expect(
+      HeartbeatMessageSchema.safeParse({ type: "heartbeat", runner_id: "r1", runs_authoritative: "yes" }).success,
+    ).toBe(false);
+  });
 });
 
 describe("accept (lease acceptance)", () => {

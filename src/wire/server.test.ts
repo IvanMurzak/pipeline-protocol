@@ -8,6 +8,7 @@ import {
   HeartbeatAckMessageSchema,
   LeaseMessageSchema,
   LeaseTaskSchema,
+  PipelineRefSchema,
   RunVariablesSchema,
   TASK_PIPELINE_UNRESOLVED,
   UploadAckMessageSchema,
@@ -225,6 +226,108 @@ describe("lease (server → agent job offer)", () => {
     );
     expect(l.execution_overrides).toEqual({ model: "opus" });
     expect(l.variables).toEqual({ PP_TARGET: "prod" });
+  });
+
+  // ── crash-resilience task d1 (ADDITIVE optional `attempt`/`max_attempts`/
+  //    `resume_hint`/`event_seq_base`) ──────────────────────────────────────
+
+  test("all four attempt fields are OPTIONAL: a lease without them still parses and has no keys", () => {
+    const l = LeaseMessageSchema.parse(lease());
+    expect(l.attempt).toBeUndefined();
+    expect(l.max_attempts).toBeUndefined();
+    expect(l.resume_hint).toBeUndefined();
+    expect(l.event_seq_base).toBeUndefined();
+    expect("attempt" in l).toBe(false);
+    expect("max_attempts" in l).toBe(false);
+    expect("resume_hint" in l).toBe(false);
+    expect("event_seq_base" in l).toBe(false);
+  });
+
+  test("a pre-d1 lease (none of the four fields) round-trips byte-identical (old readers unaffected)", () => {
+    const original = lease();
+    const parsed = LeaseMessageSchema.parse(original);
+    expect(parsed as Record<string, unknown>).toEqual(original);
+    expect("attempt" in parsed).toBe(false);
+    expect("max_attempts" in parsed).toBe(false);
+    expect("resume_hint" in parsed).toBe(false);
+    expect("event_seq_base" in parsed).toBe(false);
+  });
+
+  test("a re-offer lease carries attempt/max_attempts/resume_hint/event_seq_base and round-trips", () => {
+    const l = LeaseMessageSchema.parse(
+      lease({ attempt: 2, max_attempts: 3, resume_hint: true, event_seq_base: 2_000_000 }),
+    );
+    expect(l.attempt).toBe(2);
+    expect(l.max_attempts).toBe(3);
+    expect(l.resume_hint).toBe(true);
+    expect(l.event_seq_base).toBe(2_000_000);
+  });
+
+  test("a first-attempt lease may set attempt/max_attempts without resume_hint (fresh dispatch, attempt budget only)", () => {
+    const l = LeaseMessageSchema.parse(lease({ attempt: 1, max_attempts: 3 }));
+    expect(l.attempt).toBe(1);
+    expect(l.resume_hint).toBeUndefined();
+  });
+
+  test("resume_hint: false is a valid explicit fresh-checkout marker, distinct from absent", () => {
+    expect(LeaseMessageSchema.safeParse(lease({ resume_hint: false })).success).toBe(true);
+  });
+
+  test("event_seq_base of 0 is valid (nonnegative, not just positive)", () => {
+    expect(LeaseMessageSchema.safeParse(lease({ event_seq_base: 0 })).success).toBe(true);
+  });
+
+  test("attempt/max_attempts reject non-positive or non-integer values", () => {
+    expect(LeaseMessageSchema.safeParse(lease({ attempt: 0 })).success).toBe(false);
+    expect(LeaseMessageSchema.safeParse(lease({ attempt: -1 })).success).toBe(false);
+    expect(LeaseMessageSchema.safeParse(lease({ attempt: 1.5 })).success).toBe(false);
+    expect(LeaseMessageSchema.safeParse(lease({ max_attempts: 0 })).success).toBe(false);
+  });
+
+  test("event_seq_base rejects a negative or non-integer value", () => {
+    expect(LeaseMessageSchema.safeParse(lease({ event_seq_base: -1 })).success).toBe(false);
+    expect(LeaseMessageSchema.safeParse(lease({ event_seq_base: 1.5 })).success).toBe(false);
+  });
+
+  test("resume_hint rejects a non-boolean value", () => {
+    expect(LeaseMessageSchema.safeParse(lease({ resume_hint: "yes" })).success).toBe(false);
+  });
+
+  test("attempt fields coexist with task/execution_overrides/variables on one re-offer lease", () => {
+    const l = LeaseMessageSchema.parse(
+      lease({
+        attempt: 2,
+        max_attempts: 3,
+        resume_hint: true,
+        event_seq_base: 2_000_000,
+        execution_overrides: { model: "opus" },
+        variables: { PP_TARGET: "prod" },
+      }),
+    );
+    expect(l.attempt).toBe(2);
+    expect(l.execution_overrides).toEqual({ model: "opus" });
+    expect(l.variables).toEqual({ PP_TARGET: "prod" });
+  });
+
+  // ── ADDITIVE-POLICY rule 3: every nested object schema must be `.passthrough()` ──
+
+  test("PipelineRefSchema is passthrough: a newer peer's additive field on pipeline_ref survives", () => {
+    const l = LeaseMessageSchema.parse(
+      lease({
+        pipeline_ref: {
+          repo: "acme/api",
+          ref: "v43",
+          pipeline: "workflows/release",
+          content_hash: "sha256:abc",
+          future_field: "from-a-newer-peer",
+        },
+      }),
+    );
+    expect((l.pipeline_ref as Record<string, unknown>).future_field).toBe("from-a-newer-peer");
+  });
+
+  test("the pipeline_ref field IS PipelineRefSchema", () => {
+    expect(LeaseMessageSchema.shape.pipeline_ref).toBe(PipelineRefSchema);
   });
 });
 

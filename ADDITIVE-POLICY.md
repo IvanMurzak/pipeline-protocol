@@ -28,11 +28,23 @@ Within a major (`PROTOCOL_VERSION`, currently **1**):
    `.passthrough()` and are preserved on relay; an unknown event `type` still
    validates as a well-formed envelope via `AnyEventEnvelope`, mirroring the OSS
    daemon's "unknown event types are tolerated" behavior.)
-3. **Negotiate on connect.** Peers exchange `PROTOCOL_VERSION` when they connect;
+3. **Every new nested object schema must also be `.passthrough()`.** The
+   top-level wire envelope (`wireVariant`, `./src/wire/envelope.ts`) is
+   `.passthrough()`, but zod does NOT propagate that leniency into a nested
+   `z.object(...)` field — a strict nested schema would silently STRIP an
+   unknown field a newer peer adds to it, defeating additive-forward
+   compatibility one level down. So every new nested object schema added to
+   this package (e.g. `PipelineRefSchema`, `LeaseTaskSchema`,
+   `ExecutionOverridesSchema`) MUST end in `.passthrough()`, exactly like the
+   envelope itself. A schema that is inherently open by construction (e.g. a
+   `z.record(...)` map, or a scalar field) has nothing to add here. Reviewers:
+   treat a bare `z.object({...})` (no `.passthrough()`) as a review blocker on
+   any new nested wire schema.
+4. **Negotiate on connect.** Peers exchange `PROTOCOL_VERSION` when they connect;
    `isCompatible(remoteMajor)` encodes the policy (same major ⇒ compatible).
    Full negotiation (capability flags, min-common-minor, graceful degradation)
    is T1-02.
-4. **Value spaces may widen additively.** A field whose value space the emitter
+5. **Value spaces may widen additively.** A field whose value space the emitter
    documents as open (e.g. the model alias / canonical-id space, the reasoning
    effort space) may gain new accepted values without a major bump — so those
    fields are validated leniently (`string | null`) rather than as closed enums,
@@ -73,6 +85,29 @@ Codified from the Phase-0 spike (`docs/spike-report.md` §4, gaps G1–G10):
 
 Every one of these is a new event type or a new optional field — old consumers
 ignore them, new consumers gain the signal.
+
+## What 0.3.0 added over 0.2.0 (all additive)
+
+Codified from the crash-resilience/integrity design (`fix-fundamental-issues`
+tasks c2/d1/e3, design doc 07.1):
+
+- **`heartbeat.runs_authoritative?: boolean`** (`src/wire/client.ts`) — capability
+  flag: `active_run_ids` is treated as an exhaustive, per-run-actionable list
+  ONLY when this flag is present and `true`. Capability-keyed rather than
+  presence-keyed, because shipped 0.2.x runners already emit
+  `active_run_ids: []` unconditionally — keying on the array's mere presence
+  would have misclassified every legacy heartbeat.
+- **`lease.attempt?: number`**, **`lease.max_attempts?: number`**,
+  **`lease.resume_hint?: boolean`**, **`lease.event_seq_base?: number`**
+  (`src/wire/server.ts`) — the cloud's per-run attempt/resume bookkeeping
+  riding the offer itself, so a re-enqueued job after a crash/interrupt is
+  self-describing (`resume_hint` drives workspace adoption; `event_seq_base`
+  fences per-attempt event sequence numbers so a stale straggler from a
+  superseded attempt can never collide with a current-attempt event).
+
+Every one of these is a new optional scalar field on an existing, already
+`.passthrough()` message — old consumers (runner or control plane) ignore them
+exactly as rule 2 above describes; new consumers gain the signal.
 
 ## How a breaking change (major bump) would be handled
 
