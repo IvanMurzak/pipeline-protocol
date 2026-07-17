@@ -40,6 +40,21 @@ export const HeartbeatMessageSchema = wireVariant("heartbeat", {
   /** When `status: "paused"`, the ISO time auto-resume is expected (provider
    *  limit reset), or null if unknown. */
   paused_until: z.string().datetime({ offset: true }).nullable().optional(),
+  /**
+   * OPTIONAL capability flag (D13, ADDITIVE, task d1): `true` ⇒ this runner's
+   * `active_run_ids` is an AUTHORITATIVE, exhaustive list of its in-flight runs,
+   * so the control plane may apply per-run lease-refresh/interrupt logic keyed
+   * on membership (06.3). CAPABILITY-KEYED, not presence-keyed: shipped 0.2.x
+   * runners already emit `active_run_ids: []` unconditionally (heartbeat.ts:141),
+   * so keying per-run logic on the ARRAY's mere presence would misinterpret
+   * every legacy heartbeat and interrupt every old runner's jobs after two
+   * beats. Absent ⇒ the control plane falls back to today's legacy blanket
+   * lease refresh, byte-for-byte unchanged — a heartbeat predating this field
+   * behaves identically. Present and `true` only once the emitting runner
+   * actually populates `active_run_ids` exhaustively (a runner MUST NOT set
+   * this flag while still sending a stub empty array).
+   */
+  runs_authoritative: z.boolean().optional(),
 });
 export type HeartbeatMessage = z.infer<typeof HeartbeatMessageSchema>;
 

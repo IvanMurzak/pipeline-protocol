@@ -178,6 +178,32 @@ export type RunVariables = z.infer<typeof RunVariablesSchema>;
  * variables apply, and the lease is byte-identical to a lease predating this
  * field.
  *
+ * ── Attempt fields (crash-resilience design task d1, 07.1, ADDITIVE) ───────
+ * Four OPTIONAL fields carry the cloud's per-run attempt/resume bookkeeping
+ * (04 "Cloud attempt policy") onto the offer itself, so a re-enqueued job
+ * after a runner crash/interrupt is self-describing:
+ *   - `attempt` — this job's 1-based attempt number for the run (mirrors the
+ *     cloud's `jobs.attempt` column).
+ *   - `max_attempts` — the attempt budget for the run (mirrors
+ *     `jobs.max_attempts`); the sweeper stops re-offering once exhausted.
+ *   - `resume_hint` — `true` ⇒ this lease is a re-offer of a run that may
+ *     already have a preserved workspace on a runner (adoption, 04
+ *     "Adoption (re-lease of a preserved workspace)"); a runner recognizing
+ *     the `run_id` from a quarantined record resumes IN PLACE instead of a
+ *     fresh checkout. `false`/absent ⇒ a normal fresh-checkout lease.
+ *   - `event_seq_base` — the starting shipper sequence number for THIS
+ *     attempt's events (e.g. `attempt × 1_000_000`, 06.8), fencing a stale
+ *     straggler from a superseded attempt below the current attempt's window
+ *     so it can never collide with — or masquerade as — a current-attempt
+ *     event under the `(run_id, seq)` ingest idempotency rule.
+ * ABSENT (all four) ⇒ a first-attempt lease exactly as before this field
+ * existed — the load-bearing dispatch path is untouched for every run that
+ * predates the attempt policy. An OLD runner that doesn't recognize these
+ * fields ignores them (passthrough-tolerant envelope) and behaves as it does
+ * today: fresh checkout, shipper seq starting at 0 — degraded observability
+ * on a retried attempt (dedup-dropped events) but the run still concludes via
+ * the `run_status` fallback (06.8.3), never silently corrupted data.
+ *
  * ── Secrets (ARCHITECTURE §Security) ────────────────────────────────────────
  * Only `secret_slugs` (the NAMES of declared secrets) ride this message — never
  * the values. Secret VALUES are envelope-encrypted at rest and decrypted only at
@@ -218,6 +244,22 @@ export const LeaseMessageSchema = wireVariant("lease", {
    *  the start invocation only; absent ⇒ no dispatched variables, and the
    *  lease is byte-identical to today's. */
   variables: RunVariablesSchema.optional(),
+  /** OPTIONAL 1-based attempt number for this job (crash-resilience task d1)
+   *  — see the schema doc above. Absent ⇒ treat as attempt 1 (today's
+   *  behavior). */
+  attempt: z.number().int().positive().optional(),
+  /** OPTIONAL attempt budget for the run (crash-resilience task d1) — see the
+   *  schema doc above. Absent ⇒ no cloud-side retry cap communicated on the
+   *  wire (today's behavior; the cloud still enforces its own default). */
+  max_attempts: z.number().int().positive().optional(),
+  /** OPTIONAL re-offer/adoption hint (crash-resilience task d1) — see the
+   *  schema doc above. Absent ⇒ a normal fresh-checkout lease, byte-identical
+   *  to a lease predating this field. */
+  resume_hint: z.boolean().optional(),
+  /** OPTIONAL starting shipper sequence number for this attempt's events
+   *  (crash-resilience task d1) — see the schema doc above. Absent ⇒ the
+   *  shipper starts its `perRunSeq` at 0, today's behavior. */
+  event_seq_base: z.number().int().nonnegative().optional(),
 });
 export type LeaseMessage = z.infer<typeof LeaseMessageSchema>;
 
