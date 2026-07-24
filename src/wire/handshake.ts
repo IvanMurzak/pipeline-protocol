@@ -55,6 +55,15 @@ export const RegisterMessageSchema = wireVariant("register", {
   protocol_version: z.number().int().positive(),
   /** Max parallel runs this runner will accept (§1 "N parallel runs"). */
   capacity: z.number().int().positive().optional(),
+  /** OPTIONAL installed department slugs (mesh, `08-protocol-delta.md` §7).
+   *  Absent ⇒ this runner has no departments installed / predates the mesh —
+   *  registers unchanged. */
+  departments: z.array(z.string()).optional(),
+  /** OPTIONAL mesh protocol capability version this runner speaks (08 §7).
+   *  Independent of `protocol_version` below — mesh support is a
+   *  CAPABILITY, not a version gate ({@link isRegisterCompatible} is
+   *  deliberately untouched by the mesh addition). */
+  mesh_protocol: z.number().int().positive().optional(),
 });
 export type RegisterMessage = z.infer<typeof RegisterMessageSchema>;
 
@@ -72,6 +81,10 @@ export const RegisterAckMessageSchema = wireVariant("register_ack", {
   runner_id: z.string().min(1),
   /** Expected heartbeat cadence in seconds (the lease/liveness TTL basis). */
   heartbeat_interval_s: z.number().int().positive().optional(),
+  /** OPTIONAL: `true` when the cloud's mesh is enabled, so a mesh-capable
+   *  runner knows whether to expect `department.offer`s; absent/`false` on a
+   *  cloud without the mesh (mesh, `08-protocol-delta.md` §7). */
+  mesh_enabled: z.boolean().optional(),
 });
 export type RegisterAckMessage = z.infer<typeof RegisterAckMessageSchema>;
 

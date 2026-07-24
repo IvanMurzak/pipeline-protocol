@@ -18,6 +18,7 @@ import {
   LeaseMessageSchema,
   UploadAckMessageSchema,
 } from "./server.js";
+import { DEPT_CLIENT_VARIANTS, DEPT_SERVER_VARIANTS } from "../mesh/index.js";
 
 /**
  * The `/agent/v1` WSS message contract — assembled: two discriminated unions
@@ -25,6 +26,12 @@ import {
  * a tolerant `AnyWireMessage` for forward-compat, and their parse helpers. Same
  * pattern as the events module (`../events/`): a strict discriminated union +
  * `parse*`, plus a tolerant `Any*` for a newer peer's unknown message type.
+ *
+ * The `department.*` mesh vocabulary (`../mesh/`, design `08-protocol-
+ * delta.md`) is APPENDED to each direction's variant tuple below via
+ * `DEPT_CLIENT_VARIANTS` / `DEPT_SERVER_VARIANTS`, so `ClientMessage` /
+ * `ServerMessage` stay the ONE discriminated union each side parses against
+ * — a mesh frame is never a separate union.
  */
 
 // ── Re-export the pieces (schemas, inferred types, enums, helpers) ───────────
@@ -44,6 +51,7 @@ export const CLIENT_MESSAGE_VARIANTS = [
   NeedsInputMessageSchema,
   UploadMessageSchema,
   RunStatusMessageSchema,
+  ...DEPT_CLIENT_VARIANTS,
 ] as const;
 
 /**
@@ -70,6 +78,7 @@ export const SERVER_MESSAGE_VARIANTS = [
   CancelMessageSchema,
   HeartbeatAckMessageSchema,
   UploadAckMessageSchema,
+  ...DEPT_SERVER_VARIANTS,
 ] as const;
 
 /**
