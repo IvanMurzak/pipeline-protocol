@@ -109,6 +109,39 @@ Every one of these is a new optional scalar field on an existing, already
 `.passthrough()` message — old consumers (runner or control plane) ignore them
 exactly as rule 2 above describes; new consumers gain the signal.
 
+## What 0.4.0 added over 0.3.0 (all additive)
+
+Codified from the department-mesh design (task `b1-protocol-mesh-schemas`,
+design doc `08-protocol-delta.md`):
+
+- **`src/mesh/`** — a whole new, ADDITIVE `department.*` message vocabulary:
+  12 new wire frames across 6 modules (`task.ts`, `offer.ts`, `lease.ts`,
+  `events.ts`, `artifact.ts`, `control.ts`), every one built with
+  `wireVariant()` and appended to `CLIENT_MESSAGE_VARIANTS` /
+  `SERVER_MESSAGE_VARIANTS` (`src/wire/index.ts`) rather than living in a
+  parallel union — `ClientMessage` / `ServerMessage` stay the ONE
+  discriminated union each side parses against. Old runners and an old
+  cloud simply never emit/expect these types; a same-major peer that
+  doesn't recognize a `department.*` type ignores it (§"Compatibility
+  posture" in 08).
+- **`register.departments?: string[]`**, **`register.mesh_protocol?:
+  number`** (`src/wire/handshake.ts`) — a runner optionally advertises its
+  installed department slugs and the mesh protocol capability it speaks.
+  Both optional; an old runner registers byte-identically. Mesh support is
+  a CAPABILITY, not a version gate — `isRegisterCompatible` is deliberately
+  untouched.
+- **`register_ack.mesh_enabled?: boolean`** (`src/wire/handshake.ts`) — the
+  cloud optionally tells a mesh-capable runner whether to expect
+  `department.offer`s. Absent ⇒ today's behavior (no mesh signal).
+
+Every one of these is either a brand-new message `type` (old consumers
+ignore an unknown type) or a new optional scalar/array field on an already
+`.passthrough()` message (old consumers ignore it) — exactly rule 2 above.
+Every new NESTED object schema in `src/mesh/` (`DeptPartSchema`,
+`DeptMessageSchema`, `DeptLimitsSchema`, `DeptCapabilitiesSchema`, and each
+`DeptRuntimeEventSchema` union member) ends in `.passthrough()` per rule 3,
+asserted by test (`src/mesh/mesh.test.ts`), not by eye.
+
 ## How a breaking change (major bump) would be handled
 
 A change that cannot be expressed additively (removing/renaming a field,

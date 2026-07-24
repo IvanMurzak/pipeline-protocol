@@ -1,6 +1,6 @@
 {
   "name": "@baizor/pipeline-protocol",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Wire-protocol contract (zod schemas + inferred types + validators) shared between the ai-pipeline control-plane api and the OSS runner agent. Additive-only within a major.",
   "private": false,
   "license": "MIT",

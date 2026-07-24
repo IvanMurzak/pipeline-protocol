@@ -122,16 +122,48 @@ describe("message catalogues", () => {
   test("CLIENT_MESSAGE_TYPES lists every agent→server variant exactly once", () => {
     expect(CLIENT_MESSAGE_TYPES.length).toBe(ClientMessage.options.length);
     expect(new Set(CLIENT_MESSAGE_TYPES).size).toBe(CLIENT_MESSAGE_TYPES.length);
+    // Base v0.3.0 types + the department-mesh (0.4.0) runner→cloud additions
+    // (08-protocol-delta.md §5): ready, accept, reject, lease_renew, event, artifact.
     expect([...CLIENT_MESSAGE_TYPES].sort()).toEqual(
-      ["accept", "heartbeat", "needs_input", "register", "run_status", "upload"].sort() as typeof CLIENT_MESSAGE_TYPES[number][],
+      [
+        "accept",
+        "heartbeat",
+        "needs_input",
+        "register",
+        "run_status",
+        "upload",
+        "department.accept",
+        "department.artifact",
+        "department.event",
+        "department.lease_renew",
+        "department.ready",
+        "department.reject",
+      ].sort() as typeof CLIENT_MESSAGE_TYPES[number][],
     );
   });
 
   test("SERVER_MESSAGE_TYPES lists every server→agent variant exactly once", () => {
     expect(SERVER_MESSAGE_TYPES.length).toBe(ServerMessage.options.length);
     expect(new Set(SERVER_MESSAGE_TYPES).size).toBe(SERVER_MESSAGE_TYPES.length);
+    // Base v0.3.0 types + the department-mesh (0.4.0) cloud→runner additions
+    // (08-protocol-delta.md §4): config_update, offer, message, cancel,
+    // lease_revoked, artifact_ack.
     expect([...SERVER_MESSAGE_TYPES].sort()).toEqual(
-      ["answer", "cancel", "heartbeat_ack", "lease", "register_ack", "register_reject", "upload_ack"].sort() as typeof SERVER_MESSAGE_TYPES[number][],
+      [
+        "answer",
+        "cancel",
+        "heartbeat_ack",
+        "lease",
+        "register_ack",
+        "register_reject",
+        "upload_ack",
+        "department.artifact_ack",
+        "department.cancel",
+        "department.config_update",
+        "department.lease_revoked",
+        "department.message",
+        "department.offer",
+      ].sort() as typeof SERVER_MESSAGE_TYPES[number][],
     );
   });
 
