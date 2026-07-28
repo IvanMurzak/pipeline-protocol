@@ -63,9 +63,35 @@ export const DeptCompletedEventSchema = z
   })
   .passthrough();
 
+/**
+ * Documented (NOT closed-enum) vocabulary for `DeptFailedEventSchema.reason`
+ * — the field stays `z.string().min(1)` (ADDITIVE-POLICY rule 5: an open
+ * value space, validated leniently), since a sender already puts arbitrary
+ * human-readable failure text there (e.g. `"unity not installed"`). This
+ * array names the one CODED value this package currently distinguishes:
+ *
+ * - `"stuck"` (06-engine-modules.md §5, D25) — the task stopped reporting
+ *   progress, distinct from every other reason (which means the agent
+ *   process itself broke, declined, or ran past its deadline). This is the
+ *   wire value the "a task never goes quiet" promise rests on.
+ *
+ * Because `reason` was ALREADY an open string, `"stuck"` requires no schema
+ * change to become parseable — it is additive purely by convention. An
+ * older consumer that has never heard of `"stuck"` still parses the event
+ * as an ordinary `failed` with a reason string it doesn't specially
+ * recognize (ADDITIVE-POLICY rule 2, "old consumers ignore what they don't
+ * know"), never a parse failure. A future coded reason can extend this
+ * array the same way, with no protocol major bump.
+ */
+export const DEPT_FAILURE_REASONS = ["stuck"] as const;
+export type DeptFailureReason = (typeof DEPT_FAILURE_REASONS)[number];
+
 /** Terminal: the task failed. `retry_safe` tells the cloud whether a
  *  re-offer is safe (mirrors `RuntimeEvent`'s `retrySafe`, snake_cased for
- *  wire-naming consistency with the rest of this package). */
+ *  wire-naming consistency with the rest of this package). `reason` is a
+ *  lenient, open string — never a closed enum, so a sender's own free-text
+ *  failure message is never rejected — see {@link DEPT_FAILURE_REASONS} for
+ *  the one coded value this package documents, `"stuck"`. */
 export const DeptFailedEventSchema = z
   .object({
     type: z.literal("failed"),
