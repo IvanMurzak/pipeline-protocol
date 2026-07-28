@@ -1,0 +1,21 @@
+src/mesh/events.test.ts
+  s_6f967c396da46f::t_7142167f21f66c 3,85-128
+src/mesh/events.ts
+  s_6f967c396da46f::t_f090c3a8b03aaf 66-88,91-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "a4216e0a6a27f23e08b067f0ed41fd68cabfabf1",
+  "prompts": {},
+  "sessions": {
+    "s_6f967c396da46f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_6f967c396da46f",
+        "model": "unknown"
+      },
+      "human_author": "Ivan Murzak <Ivan.D.Murzak@gmail.com>"
+    }
+  }
+}
