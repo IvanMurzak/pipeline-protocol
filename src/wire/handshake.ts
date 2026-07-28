@@ -55,9 +55,9 @@ export const RegisterMessageSchema = wireVariant("register", {
   protocol_version: z.number().int().positive(),
   /** Max parallel runs this runner will accept (§1 "N parallel runs"). */
   capacity: z.number().int().positive().optional(),
-  /** OPTIONAL installed department slugs (mesh, `08-protocol-delta.md` §7).
-   *  Absent ⇒ this runner has no departments installed / predates the mesh —
-   *  registers unchanged. */
+  /** OPTIONAL installed department slugs (`08-protocol-delta.md` §7).
+   *  Absent ⇒ this runner has no departments installed / predates department
+   *  support — registers unchanged. */
   departments: z.array(z.string()).optional(),
   /** OPTIONAL mesh protocol capability version this runner speaks (08 §7).
    *  Independent of `protocol_version` below — mesh support is a

@@ -114,7 +114,7 @@ exactly as rule 2 above describes; new consumers gain the signal.
 Codified from the department-mesh design (task `b1-protocol-mesh-schemas`,
 design doc `08-protocol-delta.md`):
 
-- **`src/mesh/`** — a whole new, ADDITIVE `department.*` message vocabulary:
+- **`src/department/`** — a whole new, ADDITIVE `department.*` message vocabulary:
   12 new wire frames across 6 modules (`task.ts`, `offer.ts`, `lease.ts`,
   `events.ts`, `artifact.ts`, `control.ts`), every one built with
   `wireVariant()` and appended to `CLIENT_MESSAGE_VARIANTS` /
@@ -137,10 +137,10 @@ design doc `08-protocol-delta.md`):
 Every one of these is either a brand-new message `type` (old consumers
 ignore an unknown type) or a new optional scalar/array field on an already
 `.passthrough()` message (old consumers ignore it) — exactly rule 2 above.
-Every new NESTED object schema in `src/mesh/` (`DeptPartSchema`,
+Every new NESTED object schema in `src/department/` (`DeptPartSchema`,
 `DeptMessageSchema`, `DeptLimitsSchema`, `DeptCapabilitiesSchema`, and each
 `DeptRuntimeEventSchema` union member) ends in `.passthrough()` per rule 3,
-asserted by test (`src/mesh/mesh.test.ts`), not by eye.
+asserted by test (`src/department/department.test.ts`), not by eye.
 
 ## How a breaking change (major bump) would be handled
 
