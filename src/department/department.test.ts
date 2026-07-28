@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { z } from "zod";
 import { isCompatible, PROTOCOL_VERSION } from "../version.js";
-// Import from the PACKAGE ENTRY to prove the mesh surface reaches the barrel
-// (mirrors `../wire/wire.test.ts`'s own convention).
+// Import from the PACKAGE ENTRY to prove the department surface reaches the
+// barrel (mirrors `../wire/wire.test.ts`'s own convention).
 import {
   ClientMessage,
   CLIENT_MESSAGE_TYPES,
@@ -29,8 +29,8 @@ import {
   SERVER_MESSAGE_TYPES,
 } from "../index.js";
 
-describe("DEPT_CLIENT_VARIANTS / DEPT_SERVER_VARIANTS (mesh assembly, 08 §2)", () => {
-  test("each direction has exactly the six documented mesh variants", () => {
+describe("DEPT_CLIENT_VARIANTS / DEPT_SERVER_VARIANTS (department assembly, 08 §2)", () => {
+  test("each direction has exactly the six documented department variants", () => {
     const clientTypes = DEPT_CLIENT_VARIANTS.map((v) => v.shape.type.value) as string[];
     const serverTypes = DEPT_SERVER_VARIANTS.map((v) => v.shape.type.value) as string[];
     expect(clientTypes.sort()).toEqual(
@@ -41,25 +41,25 @@ describe("DEPT_CLIENT_VARIANTS / DEPT_SERVER_VARIANTS (mesh assembly, 08 §2)", 
     );
   });
 
-  test("every mesh variant is reachable through the assembled ClientMessage/ServerMessage unions", () => {
+  test("every department variant is reachable through the assembled ClientMessage/ServerMessage unions", () => {
     expect(parseClientMessage({ type: "department.ready", department_id: "d1", adapter: "jsonl-process", capabilities: {}, adapter_health: "healthy" }).type).toBe("department.ready");
     expect(parseServerMessage({ type: "department.cancel", task_id: "t1", execution_id: "e1" }).type).toBe("department.cancel");
   });
 
-  test("mesh types are folded into CLIENT_MESSAGE_TYPES / SERVER_MESSAGE_TYPES with no cross-direction overlap", () => {
+  test("department types are folded into CLIENT_MESSAGE_TYPES / SERVER_MESSAGE_TYPES with no cross-direction overlap", () => {
     for (const v of DEPT_CLIENT_VARIANTS) expect(CLIENT_MESSAGE_TYPES).toContain(v.shape.type.value);
     for (const v of DEPT_SERVER_VARIANTS) expect(SERVER_MESSAGE_TYPES).toContain(v.shape.type.value);
     const overlap = (CLIENT_MESSAGE_TYPES as readonly string[]).filter((t) =>
       (SERVER_MESSAGE_TYPES as readonly string[]).includes(t),
     );
     expect(overlap).toEqual([]);
-    // Sanity: the assembled unions' option counts match (base + 6 mesh each side).
+    // Sanity: the assembled unions' option counts match (base + 6 department each side).
     expect(CLIENT_MESSAGE_TYPES.length).toBe(ClientMessage.options.length);
     expect(SERVER_MESSAGE_TYPES.length).toBe(ServerMessage.options.length);
   });
 });
 
-describe("no server→runner (cloud→runner) mesh variant carries a bearer/execution token (08 §8)", () => {
+describe("no server→runner (cloud→runner) department variant carries a bearer/execution token (08 §8)", () => {
   test("none of DEPT_SERVER_VARIANTS' shapes has a bearer/execution-token-shaped field", () => {
     // `lease_token` (on `department.offer`) is DELIBERATELY excluded from the
     // banned set: it is a lease-scoped renewal/revocation credential, the
@@ -82,7 +82,7 @@ describe("no server→runner (cloud→runner) mesh variant carries a bearer/exec
   });
 });
 
-describe("handshake mesh extension (08 §7) — additive, isRegisterCompatible untouched", () => {
+describe("handshake department extension (08 §7) — additive, isRegisterCompatible untouched", () => {
   test("register accepts the new optional `departments` + `mesh_protocol` fields and round-trips them", () => {
     const parsed = RegisterMessageSchema.parse({
       type: "register",
@@ -125,7 +125,7 @@ describe("handshake mesh extension (08 §7) — additive, isRegisterCompatible u
     expect(isRegisterCompatible(parsed)).toBe(true);
   });
 
-  test("isCompatible(1) is still true — the mesh ships inside protocol major 1, no bump", () => {
+  test("isCompatible(1) is still true — the department extension ships inside protocol major 1, no bump", () => {
     expect(isCompatible(1)).toBe(true);
     expect(PROTOCOL_VERSION).toBe(1);
   });
@@ -153,7 +153,7 @@ describe("ADDITIVE-POLICY rule 3 sweep: every new nested object schema is .passt
     });
   }
 
-  // Top-level mesh wire frames (built via `wireVariant()`) — same guarantee,
+  // Top-level department wire frames (built via `wireVariant()`) — same guarantee,
   // inherited from the envelope, spot-checked across every new frame type.
   const frames: Array<[string, z.ZodTypeAny, Record<string, unknown>]> = [
     [
@@ -198,4 +198,74 @@ describe("ADDITIVE-POLICY rule 3 sweep: every new nested object schema is .passt
       expect((result as Record<string, unknown>).__rule3_probe).toBe("y");
     });
   }
+});
+
+describe("p2-rename-protocol: byte-level wire-value stability (identifiers moved, wire did not)", () => {
+  // `src/mesh/` -> `src/department/` and `mesh.test.ts` -> `department.test.ts`
+  // renamed FILES, EXPORTED TYPE NAMES stayed `Dept*` (they were never
+  // `Mesh*`), and the discriminated-union `type` strings were already
+  // `department.*`. The only two fields that still literally say `mesh` on
+  // the wire — `register.mesh_protocol` and `register_ack.mesh_enabled` — are
+  // deliberately UNCHANGED (a JSON key rename is a wire-value change, and
+  // that belongs to c13's dual-accept window, not this rename). These
+  // fixtures are frozen JSON.stringify captures taken immediately BEFORE the
+  // p2 rename and re-asserted immediately AFTER it landed — any accidental
+  // key/value drift (e.g. a find-and-replace catching `mesh_protocol`) fails
+  // this test byte-for-byte, not just structurally.
+  test("register: full frame, including `departments` + `mesh_protocol`, serializes byte-identically", () => {
+    const register = RegisterMessageSchema.parse({
+      type: "register",
+      runner_token: "rt_1",
+      labels: ["os:linux"],
+      os: "linux",
+      agent_version: "0.4.0",
+      cli_version: "3.4.1",
+      protocol_version: PROTOCOL_VERSION,
+      departments: ["dept-unity"],
+      mesh_protocol: 1,
+    });
+    expect(JSON.stringify(register)).toBe(
+      '{"type":"register","runner_token":"rt_1","labels":["os:linux"],"os":"linux","agent_version":"0.4.0","cli_version":"3.4.1","protocol_version":1,"departments":["dept-unity"],"mesh_protocol":1}',
+    );
+  });
+
+  test("register_ack: full frame, including `mesh_enabled`, serializes byte-identically", () => {
+    const ack = RegisterAckMessageSchema.parse({
+      type: "register_ack",
+      protocol_version: PROTOCOL_VERSION,
+      runner_id: "runner-1",
+      mesh_enabled: true,
+    });
+    expect(JSON.stringify(ack)).toBe(
+      '{"type":"register_ack","protocol_version":1,"runner_id":"runner-1","mesh_enabled":true}',
+    );
+  });
+
+  test("department.offer: full frame serializes byte-identically (the renamed directory's own top-level frame)", () => {
+    const offer = DeptOfferMessageSchema.parse({
+      type: "department.offer",
+      execution_id: "e1",
+      task_id: "t1",
+      context_id: "c1",
+      department_id: "d1",
+      attempt: 1,
+      lease_token: "lt_1",
+      lease_ttl_s: 60,
+      adapter: "jsonl-process",
+      messages: [
+        {
+          message_id: "m1",
+          role: "ROLE_USER",
+          parts: [{ text: "hi" }],
+          created_at: "2026-07-23T00:00:00.000Z",
+        },
+      ],
+      accepted_output_modes: ["text/markdown"],
+      deadline_at: "2026-07-23T01:00:00.000Z",
+      event_seq_base: 1000000,
+    });
+    expect(JSON.stringify(offer)).toBe(
+      '{"type":"department.offer","execution_id":"e1","task_id":"t1","context_id":"c1","department_id":"d1","attempt":1,"lease_token":"lt_1","lease_ttl_s":60,"adapter":"jsonl-process","messages":[{"message_id":"m1","role":"ROLE_USER","parts":[{"text":"hi"}],"created_at":"2026-07-23T00:00:00.000Z"}],"accepted_output_modes":["text/markdown"],"deadline_at":"2026-07-23T01:00:00.000Z","event_seq_base":1000000}',
+    );
+  });
 });

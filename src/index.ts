@@ -19,7 +19,7 @@ export * from "./events/index.js";
 export * from "./records/index.js";
 export * from "./ingest/index.js";
 export * from "./wire/index.js";
-export * from "./mesh/index.js";
+export * from "./department/index.js";
 
 // ── Event validators ─────────────────────────────────────────────────────────
 

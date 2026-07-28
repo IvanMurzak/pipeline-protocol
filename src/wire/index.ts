@@ -18,7 +18,7 @@ import {
   LeaseMessageSchema,
   UploadAckMessageSchema,
 } from "./server.js";
-import { DEPT_CLIENT_VARIANTS, DEPT_SERVER_VARIANTS } from "../mesh/index.js";
+import { DEPT_CLIENT_VARIANTS, DEPT_SERVER_VARIANTS } from "../department/index.js";
 
 /**
  * The `/agent/v1` WSS message contract — assembled: two discriminated unions
@@ -27,11 +27,11 @@ import { DEPT_CLIENT_VARIANTS, DEPT_SERVER_VARIANTS } from "../mesh/index.js";
  * pattern as the events module (`../events/`): a strict discriminated union +
  * `parse*`, plus a tolerant `Any*` for a newer peer's unknown message type.
  *
- * The `department.*` mesh vocabulary (`../mesh/`, design `08-protocol-
+ * The `department.*` vocabulary (`../department/`, design `08-protocol-
  * delta.md`) is APPENDED to each direction's variant tuple below via
  * `DEPT_CLIENT_VARIANTS` / `DEPT_SERVER_VARIANTS`, so `ClientMessage` /
  * `ServerMessage` stay the ONE discriminated union each side parses against
- * — a mesh frame is never a separate union.
+ * — a department frame is never a separate union.
  */
 
 // ── Re-export the pieces (schemas, inferred types, enums, helpers) ───────────

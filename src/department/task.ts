@@ -99,8 +99,8 @@ export type DeptMessage = z.infer<typeof DeptMessageSchema>;
 /**
  * Department questions REUSE the existing {@link QuestionSchema} (and its
  * `ApprovalSchema` sibling, `../common/question.ts`) UNCHANGED — "no
- * parallel shape" (08 §3). Re-exported under a `Dept`-prefixed alias so mesh
- * consumers can import it from `./mesh/` without reaching into
- * `../common/`.
+ * parallel shape" (08 §3). Re-exported under a `Dept`-prefixed alias so
+ * department consumers can import it from `./department/` without reaching
+ * into `../common/`.
  */
 export { QuestionSchema as DeptQuestionSchema, type Question as DeptQuestion } from "../common/question.js";

@@ -19,7 +19,7 @@ import { DeptMessageSchema } from "./task.js";
  * was just offered — that keeps a bearer credential off a frame that is
  * logged, spooled, and persisted to the runner's job record (the same reason
  * `secret_slugs` carries names and never values). See 08 §8 — asserted by
- * the "no bearer token" sweep in `mesh.test.ts`.
+ * the "no bearer token" sweep in `department.test.ts`.
  */
 export const DeptOfferMessageSchema = wireVariant("department.offer", {
   execution_id: z.string().min(1),

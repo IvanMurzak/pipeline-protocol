@@ -129,7 +129,7 @@ describe("RunRecordStats (D12/D13/D18)", () => {
     origin: "local",
   };
 
-  test("a current-fleet record (tokens: null, no revision/origin) round-trips", () => {
+  test("a pre-sync-mechanics record (tokens: null, no revision/origin) round-trips", () => {
     const parsed = RunRecordStatsSchema.parse(freshRecord);
     expect(parsed.tokens).toBeNull();
     // Absent sync-mechanics fields parse (absent ⇒ revision 1 / "dispatched",

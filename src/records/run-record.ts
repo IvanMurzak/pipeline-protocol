@@ -9,7 +9,7 @@ import { z } from "zod";
  * `runs.jsonl` record does not carry: `revision` (D13) and `origin` (D18).
  * Both are optional with defined absent-semantics because already-deployed
  * runners ship the bare on-disk record — a required field would reject
- * every current-fleet payload (old runner + new cloud must keep working).
+ * every pre-sync-mechanics payload (old runner + new cloud must keep working).
  *
  * ADDITIVE-POLICY conformance (see `../../ADDITIVE-POLICY.md`):
  * `.passthrough()` on every object here (unknown future fields survive a
