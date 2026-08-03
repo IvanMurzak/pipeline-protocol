@@ -67,7 +67,7 @@ export type DeptRejectReason = (typeof DEPT_REJECT_REASONS)[number];
  * `department.reject` (runner → cloud) — the runner declines a
  * `department.offer` with an explicit reason. NEW BEHAVIOUR vs. the existing
  * fixed-pipeline lease path: today a decline sends nothing
- * (`public/pipeline-runner/src/jobs/manager.ts:31-33`) and the cloud burns
+ * (`public/package/pipeline-runner/src/jobs/manager.ts:31-33`) and the cloud burns
  * the 45s offer timeout learning that; this frame shortcuts it.
  */
 export const DeptRejectMessageSchema = wireVariant("department.reject", {

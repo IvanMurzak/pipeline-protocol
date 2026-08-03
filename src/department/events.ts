@@ -116,7 +116,7 @@ export type DeptRuntimeEvent = z.infer<typeof DeptRuntimeEventSchema>;
  * the execution so the cloud can enforce `PRIMARY KEY (task_id,
  * task_version)` idempotently and detect gaps — the same discipline the
  * shipper already applies with `(run_id, seq)`
- * (`public/pipeline-runner/src/shipper/wire-ingest.ts:21-25`).
+ * (`public/package/pipeline-runner/src/shipper/wire-ingest.ts:21-25`).
  *
  * PRIVACY (07 §8): every new `department.*` event `type` MUST be added to
  * the runner shipper's `DATA_ALLOWLISTS` (`shipper/privacy.ts`) in the same
