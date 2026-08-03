@@ -74,7 +74,7 @@ describe("RunRecordStats (D12/D13/D18)", () => {
     step_type: "script",
   };
 
-  // Anonymized shape of a real `.pipelines/.stats/<rel>/runs.jsonl` line
+  // Anonymized shape of a real `.pipeline/.stats/<rel>/runs.jsonl` line
   // BEFORE the SubagentStop stats-relay hook has folded the transcript — the
   // bare on-disk record a TODAY-deployed runner ships: no revision, no origin.
   const freshRecord = {
