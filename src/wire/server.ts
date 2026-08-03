@@ -33,7 +33,7 @@ export const PipelineRefSchema = z
     repo: z.string().min(1),
     /** Git ref to check out (branch / tag / sha). */
     ref: z.string().min(1),
-    /** Pipeline name or path within the repo (under `.claude/pipeline/`). */
+    /** Pipeline name or path within the repo (under `.pipelines/`). */
     pipeline: z.string().min(1),
     /** Pinned content hash (PIPELINE.md + steps/** + scripts/**) — the eval /
      *  registry version identity; lets the runner verify it checked out the
@@ -53,7 +53,7 @@ export type PipelineRef = z.infer<typeof PipelineRefSchema>;
  * to check out a pipeline by this name. Chosen non-empty so PipelineRefSchema's
  * `min(1)` stays intact (additive — old fixed-pipeline leases are unchanged),
  * and `@`-prefixed so it can never collide with a real path under
- * `.claude/pipeline/`.
+ * `.pipelines/`.
  */
 export const TASK_PIPELINE_UNRESOLVED = "@task" as const;
 

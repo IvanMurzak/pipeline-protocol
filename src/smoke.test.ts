@@ -18,7 +18,7 @@ describe("smoke: package entry", () => {
       data: {
         pipeline_name: "workflows/implement-task",
         first_iteration_path: "/abs/path/to/steps/01-plan.md",
-        pipeline_root: "/abs/path/to/.claude/pipeline",
+        pipeline_root: "/abs/path/to/.pipelines",
         default_model: "opus",
       },
     };
