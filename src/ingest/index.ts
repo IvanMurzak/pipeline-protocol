@@ -21,6 +21,13 @@ import { z } from "zod";
  * (`apps/api/src/spike/server.ts`):
  *   POST /ingest  { run_id, events: [{ seq, payload }] }
  *              ->  { run_id, inserted, skipped }
+ *
+ * ── Batch-level execution context (ux-v2 e3) ────────────────────────────────
+ * The optional `context` field carries run dimensions that exist outside the
+ * event journal: runner environment, registered project, trigger attribution.
+ * The cloud validates and derives run dimensions from `context` fields before
+ * event-journal processing. See `cloud/apps/api/src/modules/runs/derive.ts` for
+ * the validation and the IngestBatchContext interface it parses into.
  */
 
 /**
@@ -45,11 +52,50 @@ export const IngestEventRecordSchema = z
   });
 export type IngestEventRecord = z.infer<typeof IngestEventRecordSchema>;
 
+/**
+ * Batch-level context: optional execution dimensions outside the event journal.
+ * All fields are nullish (optional AND nullable), matching server parsing at
+ * `cloud/apps/api/src/modules/runs/derive.ts:73-121`, which explicitly skips
+ * both `undefined` and `null` on every field.
+ *
+ * Validation rules (per `derive.ts`):
+ *  - `project_id`, `runner_id`: must be UUIDs if present and non-null (line 84)
+ *  - String fields: non-empty, max 4000 chars if present and non-null (line 91)
+ *  - `trigger_type`: must be one of the closed enum (line 99)
+ *    ["manual", "cron", "webhook", "api", "matrix"] from runs/types.ts:50
+ *  - `trigger_meta`: must be a JSON object if present and non-null (line 109)
+ *  - `runner_labels`: accepts any value if present and non-null (line 117)
+ * Both `undefined` and `null` skip validation in the server, so both must pass
+ * schema validation to preserve backward compatibility with clients that
+ * serialize absent fields as `null`.
+ */
+export const IngestBatchContextSchema = z
+  .object({
+    project_id: z.string().uuid().nullish(),
+    runner_id: z.string().uuid().nullish(),
+    runner_labels: z.unknown().nullish(),
+    runner_os: z.string().min(1).max(4000).nullish(),
+    runner_agent_version: z.string().min(1).max(4000).nullish(),
+    runner_cli_version: z.string().min(1).max(4000).nullish(),
+    runner_plugin_version: z.string().min(1).max(4000).nullish(),
+    harness_id: z.string().min(1).max(4000).nullish(),
+    harness_version: z.string().min(1).max(4000).nullish(),
+    pipeline_version: z.string().min(1).max(4000).nullish(),
+    project_fingerprint: z.string().min(1).max(4000).nullish(),
+    trigger_type: z.enum(["manual", "cron", "webhook", "api", "matrix"]).nullish(),
+    trigger_meta: z.record(z.unknown()).nullish(),
+    orchestrator_model: z.string().min(1).max(4000).nullish(),
+    orchestrator_effort: z.string().min(1).max(4000).nullish(),
+  })
+  .passthrough();
+export type IngestBatchContext = z.infer<typeof IngestBatchContextSchema>;
+
 /** The batched-upload REQUEST body. */
 export const IngestBatchRequestSchema = z
   .object({
     run_id: z.string().min(1),
     events: z.array(IngestEventRecordSchema),
+    context: IngestBatchContextSchema.nullish(),
   })
   .passthrough();
 export type IngestBatchRequest = z.infer<typeof IngestBatchRequestSchema>;
