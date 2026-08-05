@@ -20,6 +20,11 @@ export * from "./records/index.js";
 export * from "./ingest/index.js";
 export * from "./wire/index.js";
 export * from "./department/index.js";
+// The privacy-tier filter (ux-v2 `e1`): the canonical copy of the agent-side
+// trust boundary every shipper must run BEFORE anything is spooled or
+// uploaded. See `./privacy/index.ts` for why the runner and the CLI still
+// carry their own byte-identical copies, and how drift is guarded.
+export * from "./privacy/index.js";
 
 // ── Event validators ─────────────────────────────────────────────────────────
 
