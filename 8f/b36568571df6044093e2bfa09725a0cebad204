@@ -1,0 +1,25 @@
+src/index.ts
+  s_716a2f2d4693eb::t_363e0a6beb02bd 23-27
+src/privacy/index.ts
+  s_716a2f2d4693eb::t_3874b9068aed17 1-47
+src/privacy/privacy.test.ts
+  s_716a2f2d4693eb::t_636e8fcd6b1400 1-923
+src/privacy/privacy.ts
+  s_716a2f2d4693eb::t_315d85e22c3e75 1-430
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "8fb36568571df6044093e2bfa09725a0cebad204",
+  "prompts": {},
+  "sessions": {
+    "s_716a2f2d4693eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "30b2d290-214d-4259-afb7-f324c8e3daac",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Murzak <Ivan.D.Murzak@gmail.com>"
+    }
+  }
+}
