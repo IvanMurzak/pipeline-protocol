@@ -25,6 +25,11 @@ export * from "./department/index.js";
 // uploaded. See `./privacy/index.ts` for why the runner and the CLI still
 // carry their own byte-identical copies, and how drift is guarded.
 export * from "./privacy/index.js";
+// The shared id mint point (ux-v2 `e2`): UUIDv7 generation promoted from the
+// CLI (`newId`, `createIdGenerator`), plus the deterministic UUIDv5
+// derivation (`uuidv5`) the server uses for its two derived step classes. See
+// `./ids/index.ts`.
+export * from "./ids/index.js";
 
 // ── Event validators ─────────────────────────────────────────────────────────
 
