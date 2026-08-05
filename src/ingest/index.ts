@@ -54,32 +54,38 @@ export type IngestEventRecord = z.infer<typeof IngestEventRecordSchema>;
 
 /**
  * Batch-level context: optional execution dimensions outside the event journal.
- * All fields are optional. The cloud validates these fields before event processing.
+ * All fields are nullish (optional AND nullable), matching server parsing at
+ * `cloud/apps/api/src/modules/runs/derive.ts:73-121`, which explicitly skips
+ * both `undefined` and `null` on every field.
  *
- * Validation rules (per `cloud/apps/api/src/modules/runs/derive.ts`):
- *  - `project_id`, `runner_id`: must be UUIDs if present
- *  - String fields: non-empty, max 4000 chars if present
- *  - `trigger_type`: must be one of the known TriggerType values if present
- *  - `trigger_meta`: must be a JSON object if present
- *  - `runner_labels`: accepts any value if present
+ * Validation rules (per `derive.ts`):
+ *  - `project_id`, `runner_id`: must be UUIDs if present and non-null (line 84)
+ *  - String fields: non-empty, max 4000 chars if present and non-null (line 91)
+ *  - `trigger_type`: must be one of the closed enum (line 99)
+ *    ["manual", "cron", "webhook", "api", "matrix"] from runs/types.ts:50
+ *  - `trigger_meta`: must be a JSON object if present and non-null (line 109)
+ *  - `runner_labels`: accepts any value if present and non-null (line 117)
+ * Both `undefined` and `null` skip validation in the server, so both must pass
+ * schema validation to preserve backward compatibility with clients that
+ * serialize absent fields as `null`.
  */
 export const IngestBatchContextSchema = z
   .object({
-    project_id: z.string().uuid().optional(),
-    runner_id: z.string().uuid().optional(),
-    runner_labels: z.unknown().optional(),
-    runner_os: z.string().min(1).max(4000).optional(),
-    runner_agent_version: z.string().min(1).max(4000).optional(),
-    runner_cli_version: z.string().min(1).max(4000).optional(),
-    runner_plugin_version: z.string().min(1).max(4000).optional(),
-    harness_id: z.string().min(1).max(4000).optional(),
-    harness_version: z.string().min(1).max(4000).optional(),
-    pipeline_version: z.string().min(1).max(4000).optional(),
-    project_fingerprint: z.string().min(1).max(4000).optional(),
-    trigger_type: z.string().optional(),
-    trigger_meta: z.record(z.unknown()).optional(),
-    orchestrator_model: z.string().min(1).max(4000).optional(),
-    orchestrator_effort: z.string().min(1).max(4000).optional(),
+    project_id: z.string().uuid().nullish(),
+    runner_id: z.string().uuid().nullish(),
+    runner_labels: z.unknown().nullish(),
+    runner_os: z.string().min(1).max(4000).nullish(),
+    runner_agent_version: z.string().min(1).max(4000).nullish(),
+    runner_cli_version: z.string().min(1).max(4000).nullish(),
+    runner_plugin_version: z.string().min(1).max(4000).nullish(),
+    harness_id: z.string().min(1).max(4000).nullish(),
+    harness_version: z.string().min(1).max(4000).nullish(),
+    pipeline_version: z.string().min(1).max(4000).nullish(),
+    project_fingerprint: z.string().min(1).max(4000).nullish(),
+    trigger_type: z.enum(["manual", "cron", "webhook", "api", "matrix"]).nullish(),
+    trigger_meta: z.record(z.unknown()).nullish(),
+    orchestrator_model: z.string().min(1).max(4000).nullish(),
+    orchestrator_effort: z.string().min(1).max(4000).nullish(),
   })
   .passthrough();
 export type IngestBatchContext = z.infer<typeof IngestBatchContextSchema>;
@@ -89,7 +95,7 @@ export const IngestBatchRequestSchema = z
   .object({
     run_id: z.string().min(1),
     events: z.array(IngestEventRecordSchema),
-    context: IngestBatchContextSchema.optional(),
+    context: IngestBatchContextSchema.nullish(),
   })
   .passthrough();
 export type IngestBatchRequest = z.infer<typeof IngestBatchRequestSchema>;
