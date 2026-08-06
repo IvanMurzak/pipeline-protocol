@@ -142,6 +142,54 @@ Every new NESTED object schema in `src/department/` (`DeptPartSchema`,
 `DeptRuntimeEventSchema` union member) ends in `.passthrough()` per rule 3,
 asserted by test (`src/department/department.test.ts`), not by eye.
 
+## What 0.5.0 added over 0.4.0 (all additive)
+
+Codified from the ux-v2 telemetry design (tasks `e1`, `e2`, `e3`; design docs
+`04-subsystem-rules.md`, `05-infrastructure.md`, `07-security.md`). This release
+carries **no wire-schema change at all** to any existing message: two brand-new
+modules plus one previously-untyped optional field given a shape.
+
+- **`src/privacy/`** (`e1`) — the privacy-tier filter, lifted **verbatim,
+  byte-for-byte** from the runner's `pipeline-runner/src/shipper/privacy.ts`
+  (430 lines, `sha256 e3d53e9b…`) so a plain byte comparison against the other
+  copies stays meaningful. It is a positive ALLOWLIST, not redaction: a field
+  absent from the table is dropped, and an event `type` absent from the table
+  ships `data: {}`. New exports only — no existing export changes shape, and no
+  new dependency (`node:crypto` only). The runner keeps its own copy this
+  release and the CLI keeps its vendored copy until plugin-thin phase 6;
+  divergence is guarded by the parent monorepo's
+  `scripts/check-privacy-filter-drift.mjs` (ux-v2 `a1`, gate SG2), which is the
+  one checkout holding every copy at once.
+  `src/privacy/privacy.test.ts` is the allowlist conformance test (gate SG1) —
+  it pins the policy structurally (allowlists read out of `privacy.ts`'s own
+  syntax tree), behaviourally (the same tables re-derived from the compiled
+  filter through a `Proxy` `has` trap), and against a hostile fixture. It runs
+  in this package's CI **and in the release workflow before `npm publish`**, so
+  no tarball can ship a filter that fails it.
+- **`src/ids/`** (`e2`) — the shared id mint point: `newId()` /
+  `createIdGenerator()`, the RFC 9562 §6.2 Method-1 UUIDv7 generator promoted
+  verbatim in behaviour from `pipeline-claude`'s CLI (`b1`), plus `uuidv5(name,
+  namespace)`, the deterministic derivation the control plane needs for its two
+  derived step classes (`manager`, `step:path:*`) so re-ingest stays idempotent.
+  Client-minted and server-derived ids share ONE keyspace, so one
+  implementation is the point. Builtin-only (`node:crypto`). Argument order is
+  `(name, namespace)`, matching the `uuid` package's `v5()`. New exports only.
+- **`IngestBatchContextSchema`** (`e3`, `src/ingest/index.ts`) — a shape for the
+  `context` field that ingest batches were already free to carry untyped. The
+  field stays OPTIONAL and is `.nullish()` (accepts both absent and `null`), the
+  schema is `.passthrough()` per rule 3, and every member is itself `.nullish()`
+  — mirroring the control plane's own parse, which skips `undefined` and `null`
+  alike. `trigger_type` is a closed `z.enum(["manual","cron","webhook","api",
+  "matrix"])` because the server already validated exactly that set; closing it
+  here moves the rejection to the protocol boundary rather than widening
+  anything. **Every payload that validated on 0.4.0 still validates**, asserted
+  by test.
+
+Two new modules whose exports no 0.4.0 consumer imports, and one optional field
+that gained a type without gaining a requirement — rule 1 and rule 2 above.
+`PROTOCOL_VERSION` stays `1` and `EVENT_SCHEMA_VERSION` stays `4`: no message
+type was added, removed or changed on the wire.
+
 ## How a breaking change (major bump) would be handled
 
 A change that cannot be expressed additively (removing/renaming a field,

@@ -51,6 +51,8 @@ if (!isCompatible(remotePeerMajor)) refuseConnection();
 | `ingest/` | The batched-upload request/response + the shipper-assigned `(run_id, seq)` idempotency contract. |
 | `common/` | The shared `Question` shape (with `question_id`) and outcome value spaces. |
 | `wire/` | The runner <-> control-plane wire messages (handshake, client, server). |
+| `privacy/` | The privacy-tier **allowlist** filter every shipper must run before anything is spooled or uploaded (`filterEventForTier`, `resolvePrivacyTier`, `filterStatsRecordMetadata`, `fingerprintString`). Positive allowlist, not redaction — an unlisted field is dropped and an unlisted event `type` ships `data: {}`. |
+| `ids/` | The shared id mint point: `newId()` / `createIdGenerator()` (UUIDv7, RFC 9562 §6.2 Method 1) and `uuidv5(name, namespace)` for deterministic derivation, so client-minted and server-derived ids share one keyspace. |
 | `version.ts` | `PROTOCOL_VERSION`, `EVENT_SCHEMA_VERSION`, `isCompatible()`. |
 
 ## Scripts
