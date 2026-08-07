@@ -2,11 +2,12 @@
  * The privacy-tier filter — the canonical copy.
  *
  * `./privacy.ts` is a **verbatim, byte-for-byte lift** of the runner's
- * `pipeline-runner/src/shipper/privacy.ts` (430 lines,
- * `sha256 e3d53e9b71eda780632ce833be400a61f116ec9f29f467233133a05b6fef0d58`,
- * re-verified 2026-08-04). It is deliberately UNMODIFIED — not reformatted, not
- * re-quoted to this package's double-quote style, not re-worded — so that a
- * plain byte comparison against the other copies stays meaningful.
+ * `pipeline-runner/src/shipper/privacy.ts` (795 lines,
+ * `sha256 202595254f0bae28b25222073d04fad12c44b10e8816b30ace76858434f6fc13`,
+ * re-verified 2026-08-07 for ux-v2 `b23`). It is deliberately UNMODIFIED — not
+ * reformatted, not re-quoted to this package's double-quote style, not
+ * re-worded — so that a plain byte comparison against the other copies stays
+ * meaningful.
  *
  * ## Why there are still several copies
  *
@@ -38,6 +39,15 @@
  * both directions. A synthetic hostile event stuffed with prompts, absolute
  * paths, tool arguments and error text is then driven through the filter and
  * its output asserted exactly.
+ *
+ * **A table is not the whole policy** — ux-v2 `b23` proved that the hard way.
+ * The allowlist tables say which fields survive; they say nothing about what a
+ * surviving VALUE may contain, and for three weeks `keep` meant "verbatim,
+ * absolute machine path and all". Both pins above stayed green throughout,
+ * because the hostile fixture only ever planted an absolute path in a field the
+ * table already marked `fingerprint`. Since `b23` the filter enforces SG4 on
+ * the shape of the value, and `./privacy.test.ts` §6 pins that rule as its own
+ * third pin — the one the table cannot express.
  *
  * **If you change `./privacy.ts`, the conformance test is supposed to go red.**
  * Update the pinned table in the same commit, deliberately — that edit is the
