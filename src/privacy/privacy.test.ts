@@ -22,10 +22,34 @@
  *     machine paths, tool arguments, credentials and error text is driven
  *     through the filter, its output asserted EXACTLY, and the serialized
  *     result scanned for every planted secret.
+ *  4. **The SG4 value rule** (§6, added by ux-v2 `b23`) — the pin the tables
+ *     cannot express.
  *
  * Changing `./privacy.ts`'s allowlists is SUPPOSED to turn this suite red. Edit
  * the pinned tables below in the same commit, deliberately: that edit is the
  * privacy-policy change, and it is what a reviewer reads.
+ *
+ * ── WHY PINS 1–3 WERE NOT ENOUGH, AND WHAT `b23` CHANGED HERE ───────────────
+ *
+ * A table says which FIELDS survive. It says nothing about what a surviving
+ * VALUE may contain — and `keep` meant "verbatim, absolute machine path and
+ * all". `C:\Users\<account>\…` reached the production `events` table for three
+ * weeks (2026-07-19 → 2026-08-07, 17 rows) through `iteration_path`, and this
+ * suite was green the entire time, because:
+ *
+ *   - the hostile fixture planted absolute paths ONLY in fields the table
+ *     already marks `fingerprint` (`project_root`, `worktree`, `pipeline_root`,
+ *     `worktree_path`, `env_file`, `hook_dir`), and
+ *   - it planted `iteration_path` as an ALREADY-RELATIVE `"steps/03-implement"`
+ *     and asserted it SURVIVES — which is correct, and on its own encoded the
+ *     filter's false assumption (that the emitter hands it relative paths) as
+ *     the contract.
+ *
+ * Both are corrected below rather than deleted: each value is now planted BOTH
+ * ways, relative and absolute. §6 pins the rule itself, including the two
+ * places a field-NAME rule cannot reach — `stats.failures[].step`, which is
+ * `keep`-classified and not `*_path`-named, and a path embedded in a `summary`
+ * field's free text.
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -39,10 +63,15 @@ import {
   PRIVACY_TIERS,
   QUESTION_PLACEHOLDER,
   SUMMARY_MAX_CHARS,
+  SG4_PATH_RE,
+  collectPathRoots,
+  defaultAccountNames,
   filterEventForTier,
   filterStatsRecordMetadata,
   fingerprintString,
+  looksAbsolutePath,
   resolvePrivacyTier,
+  scrubPathString,
   stripStatsFailureExcerpts,
 } from "./index.js";
 
@@ -221,7 +250,14 @@ const PINNED_STATS_TOKENS: Record<string, Rule> = {
 };
 
 /** The ONLY module `./privacy.ts` may import. A second import is a new data
- *  path into the trust boundary and must be reviewed, not merged silently. */
+ *  path into the trust boundary and must be reviewed, not merged silently.
+ *
+ *  Still exactly one after ux-v2 `b23`, deliberately: the SG4 rule reads the OS
+ *  account name out of the environment rather than through `node:os.homedir()`,
+ *  and splits the home directory's last segment by hand rather than through
+ *  `node:path.basename()` — which would in any case apply the wrong platform's
+ *  rules, since a Windows-shaped path is routinely scrubbed on a Linux CI
+ *  runner and vice versa. */
 const PINNED_IMPORTS = ["node:crypto"];
 
 // ── 1. Structural pin: read the allowlists out of the source's syntax tree ───
@@ -358,7 +394,13 @@ const ARRAY_PROBE = [{ text: "authored message part", media_type: "text/markdown
 const PROBES: readonly unknown[] = [STRING_PROBE, RECORD_PROBE, ARRAY_PROBE];
 
 /** What each rule does to the three probes. Distinct for all five rules, which
- *  is what makes the classification below unambiguous. */
+ *  is what makes the classification below unambiguous.
+ *
+ *  NOTE (`b23`): `keep` is "verbatim" only for a value that is not path-shaped;
+ *  every surviving string then goes through the SG4 scrub. The probes are
+ *  deliberately path-free (`PROBE-xxxx…`, `text/plain`) so the five rules stay
+ *  distinguishable and this derivation keeps measuring the ALLOWLIST rather
+ *  than the scrub. The scrub gets its own pin in §6. */
 const RULE_SIGNATURES: Record<Rule, readonly unknown[]> = {
   keep: [STRING_PROBE, RECORD_PROBE, ARRAY_PROBE],
   fingerprint: [fingerprintString(STRING_PROBE, SALT), ABSENT, ABSENT],
@@ -549,7 +591,16 @@ const HOSTILE_ENVELOPE_EXTRAS = {
   env: { DATABASE_URL: "postgres://admin:hunter2@db.acme.internal/prod" },
 };
 
+/** A step path under the run's own root, and one under no root at all — the
+ *  two shapes a `keep`-classified path field can carry (`b23`). */
+const HOSTILE_STEP_IN_ROOT = `${HOSTILE_ROOT}/.pipeline/ship-feature/steps/03-implement.md`;
+const HOSTILE_STEP_OFF_ROOT = "/Users/ivan.murzak/clients/other-bank/notes/hand-off.md";
+
 describe("hostile fixture — prompts, absolute paths, tool arguments, error text", () => {
+  // `iteration_path` / `next_iteration_path` are planted RELATIVE here and
+  // asserted to survive, which is half the contract; the absolute half is the
+  // test immediately below. Before `b23` only this half existed, and it read as
+  // proof that the filter handled paths.
   test("a fully-stuffed iteration.completed is reduced to exactly the allowlist", () => {
     const event = {
       schema: 4,
@@ -619,6 +670,43 @@ describe("hostile fixture — prompts, absolute paths, tool arguments, error tex
       },
     });
     expectNoSecrets(filtered, "iteration.completed");
+  });
+
+  test("…and the SAME event with ABSOLUTE step paths ships neither of them (`b23`)", () => {
+    // The other half of the contract, and the disposition this file never
+    // exercised: `keep` copies its value, so before `b23` these two fields
+    // shipped `/Users/ivan.murzak/…` verbatim while `project_root` beside them
+    // was fingerprinted — same payload, same filter, two dispositions.
+    const filtered = filterEventForTier(
+      {
+        type: "iteration.completed",
+        project_root: HOSTILE_ROOT,
+        worktree: null,
+        data: {
+          iteration_path: HOSTILE_STEP_IN_ROOT,
+          next_iteration_path: HOSTILE_STEP_OFF_ROOT,
+          outcome: "FAIL",
+          step_name: "implement",
+        },
+      },
+      "metadata",
+      { fingerprintSalt: SALT },
+    );
+    expect(filtered).toEqual({
+      type: "iteration.completed",
+      project_root: fingerprintString(HOSTILE_ROOT, SALT),
+      worktree: null,
+      data: {
+        // Under the run's own root: relativized, so the step is STILL NAMED —
+        // the fix is not "ship nothing".
+        iteration_path: ".pipeline/ship-feature/steps/03-implement.md",
+        // Under no known root: fails closed to the same fingerprint shape.
+        next_iteration_path: expect.stringMatching(/^fp:[0-9a-f]{16}$/) as unknown as string,
+        outcome: "FAIL",
+        step_name: "implement",
+      },
+    });
+    expectNoSecrets(filtered, "iteration.completed (absolute)");
   });
 
   test("the `summary` rule truncates the secret-bearing tail away", () => {
@@ -752,6 +840,9 @@ describe("hostile fixture — prompts, absolute paths, tool arguments, error tex
     expectNoSecrets(filtered, "tool.called");
   });
 
+  // `steps[].id` and `failures[].step` are planted RELATIVE here. Both are
+  // `keep`-classified and NEITHER is `*_path`-named, which is why the absolute
+  // case (below) is the one a field-name patch would have missed entirely.
   test("the stats record drops failure `error` excerpts and unknown fields", () => {
     const filtered = filterEventForTier(
       {
@@ -797,6 +888,57 @@ describe("hostile fixture — prompts, absolute paths, tool arguments, error tex
       },
     });
     expectNoSecrets(filtered, "stats.run_record");
+  });
+
+  test("…and an ABSOLUTE `failures[].step` / `steps[].id` never ships (`b23`)", () => {
+    const filtered = filterEventForTier(
+      {
+        type: "stats.run_record",
+        project_root: HOSTILE_ROOT,
+        data: {
+          run_id: "run-0199",
+          pipeline: "ship-feature",
+          outcome: "FAIL",
+          steps: [{ id: HOSTILE_STEP_IN_ROOT, seconds: 41, outcome: "FAIL" }],
+          failures: [
+            { ts: "2026-08-04T10:00:00.000Z", tool: "Bash", step: HOSTILE_STEP_IN_ROOT },
+            { ts: "2026-08-04T10:01:00.000Z", tool: "Read", step: HOSTILE_STEP_OFF_ROOT },
+          ],
+        },
+      },
+      "metadata",
+      { fingerprintSalt: SALT },
+    );
+    const data = filtered.data as Record<string, unknown>;
+    expect((data.steps as Record<string, unknown>[])[0]?.id).toBe(
+      ".pipeline/ship-feature/steps/03-implement.md",
+    );
+    expect((data.failures as Record<string, unknown>[])[0]?.step).toBe(
+      ".pipeline/ship-feature/steps/03-implement.md",
+    );
+    expect((data.failures as Record<string, unknown>[])[1]?.step).toMatch(/^fp:[0-9a-f]{16}$/);
+    expectNoSecrets(filtered, "stats.run_record (absolute step)");
+  });
+
+  test("a bare stats record relativizes against the root its CALLER supplies (`b23`)", () => {
+    // A `RunRecord` carries no root field of its own, so a caller that filters
+    // one directly — rather than wrapped in an envelope — has to say what the
+    // root is. Without one the path fails closed rather than shipping.
+    const record = {
+      run_id: "run-0199",
+      failures: [{ ts: "2026-08-04T10:00:00.000Z", tool: "Bash", step: HOSTILE_STEP_IN_ROOT }],
+    };
+    expect(
+      (
+        filterStatsRecordMetadata(record, { fingerprintSalt: SALT, pathRoots: [HOSTILE_ROOT] })
+          .failures as Record<string, unknown>[]
+      )[0]?.step,
+    ).toBe(".pipeline/ship-feature/steps/03-implement.md");
+    expect(
+      (filterStatsRecordMetadata(record, { fingerprintSalt: SALT }).failures as Record<string, unknown>[])[0]
+        ?.step,
+    ).toMatch(/^fp:[0-9a-f]{16}$/);
+    expectNoSecrets(filterStatsRecordMetadata(record, { fingerprintSalt: SALT }), "bare stats record");
   });
 
   test("stripStatsFailureExcerpts removes `error` at EVERY tier, before the tier filter", () => {
@@ -919,5 +1061,204 @@ describe("tiers", () => {
       "metadata",
     );
     expect(filtered.data).toEqual({ worktree_path: null, ok: true });
+  });
+});
+
+// ── 6. The SG4 value rule (ux-v2 `b23`) ──────────────────────────────────────
+//
+// The pin the allowlist tables cannot express. §§1–2 pin WHICH FIELDS survive;
+// this one pins what a surviving VALUE may contain. It exists because §§1–3
+// were all green while `iteration_path` shipped `C:\Users\<account>\…` to
+// production for three weeks: `keep` meant verbatim, and no table can say
+// otherwise.
+//
+// The arbiter is not invented here. `SG4_PATH_RE` is transcribed verbatim from
+// `scripts/i1-production-e2e/check-sg4.mjs` in the parent monorepo — the check
+// that read the defect out of the production `events` table — so "this filter
+// is conformant" and "the production check is clean" are one statement.
+
+/** Every `keep`-classified field in `PINNED_DATA` whose value is a PATH,
+ *  derived from the pinned table itself rather than listed by hand: a path
+ *  field added to the policy tomorrow joins this sweep automatically. */
+const PINNED_KEEP_PATH_FIELDS: Array<[string, string]> = Object.entries(PINNED_DATA).flatMap(
+  ([type, fields]) =>
+    Object.entries(fields)
+      .filter(([field, rule]) => rule === "keep" && field.endsWith("_path"))
+      .map(([field]) => [type, field] as [string, string]),
+);
+
+/** Every string leaf of a payload with its dotted location — `check-sg4.mjs`'s
+ *  own `scanStrings` walk. */
+function stringLeaves(node: unknown, at = "payload"): Array<[string, string]> {
+  if (typeof node === "string") return [[at, node]];
+  if (Array.isArray(node)) return node.flatMap((v, i) => stringLeaves(v, `${at}[${i}]`));
+  if (node && typeof node === "object") {
+    return Object.entries(node).flatMap(([k, v]) => stringLeaves(v, `${at}.${k}`));
+  }
+  return [];
+}
+
+function sg4Findings(payload: unknown): string[] {
+  return stringLeaves(payload)
+    .filter(([, v]) => SG4_PATH_RE.test(v))
+    .map(([at, v]) => `${at} -> ${JSON.stringify(v.slice(0, 140))}`);
+}
+
+describe("SG4 — the shape of the value, not the name of the field", () => {
+  test("EVERY `keep`-classified `*_path` field in the pinned policy is scrubbed", () => {
+    // Not "the two fields i1 observed". If this sweep is empty the pinned table
+    // itself has stopped naming any path field, which is its own failure.
+    expect(PINNED_KEEP_PATH_FIELDS.length).toBeGreaterThan(10);
+    for (const [type, field] of PINNED_KEEP_PATH_FIELDS) {
+      const filtered = filterEventForTier(
+        { type, project_root: HOSTILE_ROOT, data: { [field]: HOSTILE_STEP_IN_ROOT } },
+        "metadata",
+        { fingerprintSalt: SALT },
+      );
+      const findings = sg4Findings(filtered);
+      expect(`${type}.${field}: ${findings.join(" | ") || "clean"}`).toBe(`${type}.${field}: clean`);
+      // …and not by DELETING the field: the step is still named, relative to
+      // the run's own root.
+      expect(`${type}.${field} = ${String((filtered.data as Record<string, unknown>)[field])}`).toBe(
+        `${type}.${field} = .pipeline/ship-feature/steps/03-implement.md`,
+      );
+    }
+  });
+
+  test("a path embedded in a `summary` field's free text is rewritten, prose intact", () => {
+    // No field-NAME rule can reach this one: `halt_reason` is free text.
+    const filtered = filterEventForTier(
+      {
+        type: "run.halted",
+        project_root: HOSTILE_ROOT,
+        data: { halt_reason: `cannot open ${HOSTILE_STEP_IN_ROOT} (ENOENT)` },
+      },
+      "metadata",
+      { fingerprintSalt: SALT },
+    );
+    expect((filtered.data as Record<string, unknown>).halt_reason).toBe(
+      "cannot open .pipeline/ship-feature/steps/03-implement.md (ENOENT)",
+    );
+    expect(sg4Findings(filtered)).toEqual([]);
+  });
+
+  test("all three absolute shapes relativize; a relative value and a URL are untouched", () => {
+    const roots = {
+      posix: "/home/ivand/work/proj",
+      windows: "C:\\Users\\IvanD\\work\\proj",
+      unc: "\\\\fileserver\\team\\ivand\\proj",
+    };
+    for (const root of Object.values(roots)) {
+      const sep = root.includes("/") ? "/" : "\\";
+      expect(looksAbsolutePath(root)).toBe(true);
+      expect(
+        scrubPathString(`${root}${sep}steps${sep}01.md`, { roots: [root], fingerprintSalt: SALT }),
+      ).toBe("steps/01.md");
+    }
+    expect(looksAbsolutePath("steps/01.md")).toBe(false);
+    expect(scrubPathString("steps/01.md", { fingerprintSalt: SALT })).toBe("steps/01.md");
+    // A URL is not a path — `blocker_issue_url` is `keep` and must not be
+    // mangled. (`https://` contains `s:/`, which is why the arbiter carries a
+    // leading-boundary guard.)
+    const url = "https://github.com/IvanMurzak/pipeline/issues/1";
+    expect(looksAbsolutePath(url)).toBe(false);
+    expect(scrubPathString(url, { fingerprintSalt: SALT })).toBe(url);
+    expect(
+      (
+        filterEventForTier(
+          { type: "blocker.polling", data: { blocker_issue_url: url, pr_state: "open" } },
+          "metadata",
+        ).data as Record<string, unknown>
+      ).blocker_issue_url,
+    ).toBe(url);
+  });
+
+  test("a relativized remainder that would still name the OS account is refused", () => {
+    // Root is the home directory itself, so the remainder would be
+    // `ivand/proj/steps/01.md` — root-free, but still naming the account.
+    expect(
+      scrubPathString("/Users/ivand/proj/steps/01.md", {
+        roots: ["/Users"],
+        accountNames: ["ivand"],
+        fingerprintSalt: SALT,
+      }),
+    ).toMatch(/^fp:[0-9a-f]{16}$/);
+    expect(defaultAccountNames({ USERNAME: "ivand", USER: undefined, LOGNAME: undefined })).toEqual([
+      "ivand",
+    ]);
+    // A one-character name is dropped: it would match half the world's path
+    // segments, and the absolute-path rule already covers the disclosure.
+    expect(defaultAccountNames({ USER: "x" }, null)).toEqual([]);
+    // A bare token that merely EQUALS the account name, with no path around it,
+    // is NOT a layout disclosure and is left alone — redacting it would corrupt
+    // step identity for every consumer downstream.
+    expect(scrubPathString("ivand", { accountNames: ["ivand"], fingerprintSalt: SALT })).toBe("ivand");
+  });
+
+  test("the roots come from the UNFILTERED event, and the most specific one wins", () => {
+    const worktree = `${HOSTILE_ROOT}/.worktrees/run-1`;
+    expect(collectPathRoots({ project_root: HOSTILE_ROOT, worktree })).toEqual([worktree, HOSTILE_ROOT]);
+    // After the allowlist, `project_root` is `fp:…` and names nothing — which
+    // is why the filter collects roots BEFORE it runs.
+    expect(collectPathRoots({ project_root: fingerprintString(HOSTILE_ROOT, SALT) })).toEqual([]);
+    const filtered = filterEventForTier(
+      {
+        type: "iteration.started",
+        project_root: HOSTILE_ROOT,
+        worktree,
+        data: { iteration_path: `${worktree}/steps/01.md` },
+      },
+      "metadata",
+      { fingerprintSalt: SALT },
+    );
+    expect((filtered.data as Record<string, unknown>).iteration_path).toBe("steps/01.md");
+  });
+
+  test("the scrub is idempotent — a second pass over a filtered payload is a no-op", () => {
+    const once = filterEventForTier(
+      {
+        type: "iteration.completed",
+        project_root: HOSTILE_ROOT,
+        data: { iteration_path: HOSTILE_STEP_IN_ROOT, next_iteration_path: HOSTILE_STEP_OFF_ROOT },
+      },
+      "metadata",
+      { fingerprintSalt: SALT },
+    );
+    const twice = filterEventForTier(once, "metadata", {
+      fingerprintSalt: SALT,
+      pathRoots: [HOSTILE_ROOT],
+    });
+    expect(twice.data).toEqual(once.data);
+  });
+
+  test("`events` and `full` are unaffected — at those tiers the TIER is the control", () => {
+    const event = {
+      type: "iteration.started",
+      project_root: HOSTILE_ROOT,
+      data: { iteration_path: HOSTILE_STEP_IN_ROOT },
+    };
+    expect(filterEventForTier(event, "events")).toBe(event);
+    expect(filterEventForTier(event, "full")).toBe(event);
+  });
+
+  test("the arbiter itself is not vacuous — it flags every shape it is meant to", () => {
+    for (const bad of [
+      "C:\\Users\\IvanD\\x.md",
+      "C:/Users/IvanD/x.md",
+      "/Users/ivan.murzak/x.md",
+      "/home/ivand/x.md",
+      "\\\\fileserver\\team\\x.md",
+      "cannot open C:\\Users\\IvanD\\x.md (ENOENT)",
+    ]) {
+      expect(`${bad}: ${SG4_PATH_RE.test(bad)}`).toBe(`${bad}: true`);
+    }
+    for (const ok of [
+      "steps/01.md",
+      "fp:0123456789abcdef",
+      "https://github.com/IvanMurzak/pipeline/issues/1",
+      "workflows/release",
+    ]) {
+      expect(`${ok}: ${SG4_PATH_RE.test(ok)}`).toBe(`${ok}: false`);
+    }
   });
 });
