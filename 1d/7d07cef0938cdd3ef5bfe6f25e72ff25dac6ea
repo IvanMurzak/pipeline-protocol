@@ -1,0 +1,23 @@
+src/privacy/index.ts
+  s_9cc04eba420211::t_86e5e923b39f6b 5-10,43-51
+src/privacy/privacy.test.ts
+  s_9cc04eba420211::t_db6c034a8aa516 25-26,31-52,66-68,72,74,253-260,397-403,594-598,600-603,675-711,843-845,893-943,1066-1264
+src/privacy/privacy.ts
+  s_9cc04eba420211::t_1ae81ef19e7cbc 37-83,145-424,634-649,695-705,722-726,753-762,772,779-782,789-793
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1d7d07cef0938cdd3ef5bfe6f25e72ff25dac6ea",
+  "prompts": {},
+  "sessions": {
+    "s_9cc04eba420211": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_9cc04eba420211",
+        "model": "unknown"
+      },
+      "human_author": "Ivan Murzak <Ivan.D.Murzak@gmail.com>"
+    }
+  }
+}
