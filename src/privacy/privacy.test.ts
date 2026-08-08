@@ -72,6 +72,9 @@ import {
   looksAbsolutePath,
   resolvePrivacyTier,
   scrubPathString,
+  STEP_IDENTITY_FIELD,
+  STEP_SCOPED_EVENT_TYPES,
+  stepShapedAllowlistViolations,
   stripStatsFailureExcerpts,
 } from "./index.js";
 
@@ -120,6 +123,7 @@ const PINNED_DATA: Record<string, Record<string, Rule>> = {
     step_type: "keep",
     resumed: "keep",
     emission: "keep",
+    step_uuid: "keep",
   },
   "iteration.resumed": {
     iteration_path: "keep",
@@ -130,6 +134,7 @@ const PINNED_DATA: Record<string, Record<string, Rule>> = {
     step_id: "keep",
     resumed: "keep",
     emission: "keep",
+    step_uuid: "keep",
   },
   "iteration.completed": {
     iteration_path: "keep",
@@ -143,11 +148,22 @@ const PINNED_DATA: Record<string, Record<string, Rule>> = {
     step_id: "keep",
     step_type: "keep",
     failure_class: "keep",
+    step_uuid: "keep",
   },
-  "improver.started": { iteration_path: "keep" },
-  "improver.completed": { iteration_path: "keep", applied: "keep", has_script_brief: "keep" },
-  "script_creator.started": { iteration_path: "keep" },
-  "script_creator.completed": { iteration_path: "keep", script_path: "keep", outcome: "keep" },
+  "improver.started": { iteration_path: "keep", step_uuid: "keep" },
+  "improver.completed": {
+    iteration_path: "keep",
+    applied: "keep",
+    has_script_brief: "keep",
+    step_uuid: "keep",
+  },
+  "script_creator.started": { iteration_path: "keep", step_uuid: "keep" },
+  "script_creator.completed": {
+    iteration_path: "keep",
+    script_path: "keep",
+    outcome: "keep",
+    step_uuid: "keep",
+  },
   "blocker.delegated": {
     parent_iteration_path: "keep",
     blocker_issue_url: "keep",
@@ -158,7 +174,7 @@ const PINNED_DATA: Record<string, Record<string, Rule>> = {
   "blocker.resolved": { blocker_issue_url: "keep", merged_pr_url: "keep" },
   "pipeline.completed": { pipeline_name: "keep" },
   "pipeline.halted": { pipeline_name: "keep", iteration_path: "keep", halt_reason: "summary" },
-  "manager.stopped": { run_id: "keep", agent_id: "keep" },
+  "manager.stopped": { run_id: "keep", agent_id: "keep", step_uuid: "keep" },
   "worktree.created": {
     worktree_path: "fingerprint",
     branch: "keep",
@@ -170,13 +186,20 @@ const PINNED_DATA: Record<string, Record<string, Rule>> = {
   },
   "worktree.finalized": { worktree_path: "fingerprint", ok: "keep", outcome: "keep" },
   "worktree.destroyed": { worktree_path: "fingerprint", ok: "keep", outcome: "keep" },
-  "tool.called": { tool_name: "keep", success: "keep", agent_spawn: "keep", tool_use_id: "keep" },
+  "tool.called": {
+    tool_name: "keep",
+    success: "keep",
+    agent_spawn: "keep",
+    tool_use_id: "keep",
+    step_uuid: "keep",
+  },
   "turn.usage": {
     assistant_turns: "keep",
     input_tokens: "keep",
     output_tokens: "keep",
     cache_read_tokens: "keep",
     cache_creation_tokens: "keep",
+    step_uuid: "keep",
   },
   "run.started": {
     pipeline_name: "keep",
@@ -187,7 +210,15 @@ const PINNED_DATA: Record<string, Record<string, Rule>> = {
   },
   "run.completed": { pipeline_name: "keep", outcome: "keep" },
   "run.halted": { pipeline_name: "keep", iteration_path: "keep", halt_reason: "summary" },
-  awaiting_input: { run_id: "keep", iteration: "keep", question_id: "keep", question: "question" },
+  awaiting_input: {
+    run_id: "keep",
+    iteration: "keep",
+    question_id: "keep",
+    question: "question",
+    step_name: "keep",
+    iteration_path: "keep",
+    step_uuid: "keep",
+  },
   // Routed to the nested stats filter before this table is consulted; the empty
   // entry only lets the envelope walk pass the already-filtered record through.
   "stats.run_record": {},
@@ -235,6 +266,7 @@ const PINNED_STATS_STEP: Record<string, Rule> = {
   effort: "keep",
   step_type: "keep",
   failure_class: "keep",
+  step_uuid: "keep",
 };
 
 const PINNED_STATS_TOKENS: Record<string, Rule> = {
@@ -1260,5 +1292,72 @@ describe("SG4 — the shape of the value, not the name of the field", () => {
     ]) {
       expect(`${ok}: ${SG4_PATH_RE.test(ok)}`).toBe(`${ok}: false`);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE STEP-IDENTITY RULE (ux-v2 `b24`)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The pinned tables above are the structural half of this: every step-shaped
+// allowlist now pins `step_uuid: "keep"`, so removing it from privacy.ts is a
+// loud pin failure rather than a silent strip. The pins are also how the
+// omission survived — they were written FROM the allowlists, so they recorded
+// whatever the allowlists happened to contain, and the allowlists contained no
+// step identity at all. `grep -c step_uuid` over the shipped filter returned 0,
+// the server derived a row identity per reporting path over two different keys,
+// and production held four `step_executions` rows for two steps.
+//
+// The behavioural half is below: the RULE, checked against the live tables so a
+// future step-shaped allowlist cannot land without identity even if someone
+// updates the pins to match it.
+
+describe("the step-identity rule (b24)", () => {
+  test("THE SWEEP: no step-shaped allowlist is missing step identity", () => {
+    expect(stepShapedAllowlistViolations()).toEqual([]);
+  });
+
+  test.each([...STEP_SCOPED_EVENT_TYPES])(
+    "%s carries step_uuid through the metadata tier",
+    (type) => {
+      const uuid = "019fded9-3a7c-7c31-9f0e-2b5a1d4e8c60";
+      const filtered = filterEventForTier(
+        { schema: 5, ts: "2026-08-08T10:00:00.000Z", type, run_id: "r1", data: { step_uuid: uuid } },
+        "metadata",
+      ) as { data: Record<string, unknown> };
+      expect(filtered.data[STEP_IDENTITY_FIELD]).toBe(uuid);
+    },
+  );
+
+  test("D15: both reporters ship the SAME uuid, so the cloud sees ONE row", () => {
+    const uuid = "019fded9-3a7c-7c31-9f0e-2b5a1d4e8c60";
+    const fromEvent = (
+      filterEventForTier(
+        {
+          schema: 5,
+          ts: "2026-08-08T10:00:00.000Z",
+          type: "iteration.completed",
+          run_id: "r1",
+          data: { iteration_path: "steps/01.md", outcome: "completed", step_uuid: uuid },
+        },
+        "metadata",
+      ) as { data: Record<string, unknown> }
+    ).data[STEP_IDENTITY_FIELD];
+    const fromStats = (
+      filterStatsRecordMetadata({
+        run_id: "r1",
+        steps: [{ id: "01-prepare", outcome: "pass", step_uuid: uuid }],
+      }).steps as Array<Record<string, unknown>>
+    )[0]?.[STEP_IDENTITY_FIELD];
+    expect(fromEvent).toBe(uuid);
+    expect(fromStats).toBe(uuid);
+    expect(fromEvent).toBe(fromStats);
+  });
+
+  test("a step uuid is not path-shaped, so the SG4 scrub leaves it alone", () => {
+    const uuid = "019fded9-3a7c-7c31-9f0e-2b5a1d4e8c60";
+    expect(looksAbsolutePath(uuid)).toBe(false);
+    expect(SG4_PATH_RE.test(uuid)).toBe(false);
+    expect(scrubPathString(uuid)).toBe(uuid);
   });
 });
