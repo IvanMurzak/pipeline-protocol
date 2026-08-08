@@ -2,9 +2,9 @@
  * The privacy-tier filter — the canonical copy.
  *
  * `./privacy.ts` is a **verbatim, byte-for-byte lift** of the runner's
- * `pipeline-runner/src/shipper/privacy.ts` (795 lines,
- * `sha256 202595254f0bae28b25222073d04fad12c44b10e8816b30ace76858434f6fc13`,
- * re-verified 2026-08-07 for ux-v2 `b23`). It is deliberately UNMODIFIED — not
+ * `pipeline-runner/src/shipper/privacy.ts` (991 lines,
+ * `sha256 d3af2eb7dabaab55ba8316171c8394441df87601781841823704ca9e7b010e64`,
+ * re-verified 2026-08-08 for ux-v2 `b24`). It is deliberately UNMODIFIED — not
  * reformatted, not re-quoted to this package's double-quote style, not
  * re-worded — so that a plain byte comparison against the other copies stays
  * meaningful.
