@@ -10,9 +10,10 @@ import { z } from "zod";
  *     `./index.ts`) are discriminated unions over it, exactly as `EventEnvelope`
  *     is over the event `type`.
  *   - `id`  — an OPTIONAL correlation id. Set on a request that expects a reply
- *     (a `lease`, a `heartbeat`, an `upload`, a `needs_input`), and ECHOED on the
- *     reply (`accept`, `heartbeat_ack`, `upload_ack`, `answer`) so a peer can pair
- *     a response to its request over a single multiplexed socket. Fire-and-forget
+ *     (a `lease`, a `heartbeat`, an `upload`, a `needs_input`, a `chat_send`),
+ *     and ECHOED on the reply (`accept`, `heartbeat_ack`, `upload_ack`,
+ *     `answer`, every `chat_reply` chunk of a turn) so a peer can pair a
+ *     response to its request over a single multiplexed socket. Fire-and-forget
  *     messages (e.g. `run_status`, `cancel`) may omit it. Kept optional — not
  *     hard-required per message — so the request/reply convention stays a routing
  *     aid, not a schema gate (a T1-06 gateway decision, see follow-ups).

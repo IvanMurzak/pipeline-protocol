@@ -215,6 +215,80 @@ doc `02-target-architecture.md` §"Unified status model").
 New exports only; `PROTOCOL_VERSION` stays `1` and `EVENT_SCHEMA_VERSION`
 stays `4` — no message type or envelope field changed on the wire.
 
+## What 0.9.0 added over 0.8.0 (all additive)
+
+Codified from the `pipeline-ui-v2` design (task `a3-protocol-chat-frames`, design
+doc `02-target-architecture.md` §M6, gate G1b) — the P2.5 run-bound chat
+channel: text messages to/from the runner's executor session, riding the
+existing relay transport (no second transport, M6). Revised after a blocking
+taskflow review (PR #19) that found the first draft's use of the OPTIONAL
+envelope `id` as a turn's only identity, its silent-rejection failure mode,
+and its lack of a capability signal all insufficient — see each item below.
+
+- **`src/wire/server.ts`: `ChatSendMessageSchema` (`chat_send`, server → agent)**
+  — a brand-new message type: deliver a run-bound text chat message down to the
+  runner's executor session. `{ run_id, message_id, message, sent_by, ts }`,
+  built with `wireVariant()` (so `.passthrough()` per rule 3) and appended to
+  `SERVER_MESSAGE_VARIANTS` (`src/wire/index.ts`). Minimal channel (R5b): text
+  only, no attachment fields, no history-backfill fields; `run_id` is the sole
+  SESSION-scoping key, mirroring `needs_input`/`answer`. `message_id` is a
+  REQUIRED in-body TURN identity — NOT the optional envelope `id`, which
+  `src/wire/envelope.ts` itself documents as "a routing aid, not a schema
+  gate" — following this repo's own precedent for the identical problem:
+  `needs_input`'s required `question_id` and `DeptMessageSchema`'s required
+  `message_id` (`src/department/task.ts`). It disambiguates concurrent turns
+  on one run, lets a redelivered `chat_send` (F7's 202-queue-and-redeliver
+  semantics) be recognized as a duplicate via the `(run_id, message_id)` pair
+  rather than re-injected into the session, and lets a reply to a superseded
+  turn be rejected. `message` is bounded by the new `CHAT_MESSAGE_MAX_CHARS`
+  constant (32,000 chars) — a fixed schema cap, since the minimal channel has
+  no per-runtime capability negotiation surface the way `department.*` does
+  (`DeptCapabilitiesSchema.maxMessageBytes`). `sent_by` is an AUDIT-LOG
+  identity only, the same class of field as `AnswerMessageSchema.answered_by`
+  — the schema carries no client-asserted authz data; chat rides the identical
+  authorization path as `needs_input.answer` (07 §T7), enforced cloud-side
+  before the frame is sent.
+- **`src/wire/client.ts`: `ChatReplyMessageSchema` (`chat_reply`, agent → server)**
+  — a brand-new message type: the runner's executor-session reply to a
+  `chat_send`, STREAMED as one or more frames via `done: false`/`true`.
+  `{ run_id, message_id, message, done, error?, ts }`, built with
+  `wireVariant()` and appended to `CLIENT_MESSAGE_VARIANTS`. `message_id`
+  REQUIRED-echoes the originating `chat_send.message_id` on every chunk of the
+  turn. The new OPTIONAL `error` field (`{ code, message }`,
+  `ChatReplyErrorSchema`, `.passthrough()` per rule 3, `code` an OPEN lenient
+  string per rule 5 — mirrors `DeptFailedEventSchema.reason`) is the turn's
+  explicit terminal-failure signal: a runner that cannot service a turn (a
+  `chat_send` for a run/session it does not own, a dead executor session, a
+  run gone terminal) MUST emit a final `chat_reply` with `done: true` and
+  `error` populated, rather than staying silent — silence is indistinguishable
+  from "still working" to a consumer assembling the stream. Same
+  minimal-channel constraints and shared `CHAT_MESSAGE_MAX_CHARS` bound as
+  `chat_send`.
+- **`src/wire/handshake.ts`: `RegisterMessageSchema.chat_capable?: boolean`**
+  — a new OPTIONAL capability flag on `register` (agent → server): `true` ⇒
+  this runner supports `chat_send`/`chat_reply` and will route an inbound
+  `chat_send` into the run's executor session. CAPABILITY-KEYED, not
+  version-inferred — the SAME posture this package already took for
+  `mesh_protocol` ("a CAPABILITY, not a version gate") and
+  `heartbeat.runs_authoritative` ("CAPABILITY-KEYED, not presence-keyed"), and
+  the nearest analogue, `department.message`'s `midTaskInput` gate
+  (`src/department/control.ts`). Necessary because an old runner that has
+  never heard of `chat_send` still parses it via the tolerant `AnyWireMessage`
+  path and silently drops it — observationally identical to the B2 failure
+  mode above, and undetectable from `agent_version`/`protocol_version` alone.
+  Absent/`false` ⇒ the cloud must not send `chat_send` to this runner.
+
+Every one of the four additions above is either a brand-new message `type`
+(old consumers ignore an unknown type, rule 2) or a new optional field on an
+already-`.passthrough()` message (rule 2); every new nested object schema
+(`ChatReplyErrorSchema`) ends in `.passthrough()` (rule 3). No existing
+message's field changed shape or requiredness. `PROTOCOL_VERSION` stays `1`
+and `EVENT_SCHEMA_VERSION` stays `4` — no closed enum grew (the
+`phase`/`RUNNER_STATUSES`/`RUN_STATUS_PHASES`/`HEARTBEAT_DIRECTIVES`/
+`REGISTER_REJECT_REASONS` enums are all untouched; `ChatReplyErrorSchema.code`
+is deliberately an open string, never a closed enum, exactly so a future
+failure class needs no schema change).
+
 ## How a breaking change (major bump) would be handled
 
 A change that cannot be expressed additively (removing/renaming a field,

@@ -37,6 +37,16 @@ describe("ClientMessage discriminated union (agent → server)", () => {
     expect(parseClientMessage(aRegister).type).toBe("register");
     expect(parseClientMessage({ type: "heartbeat", runner_id: "r1" }).type).toBe("heartbeat");
     expect(parseClientMessage({ type: "run_status", run_id: "run-1", phase: "started" }).type).toBe("run_status");
+    expect(
+      parseClientMessage({
+        type: "chat_reply",
+        run_id: "run-1",
+        message_id: "msg-1",
+        message: "hi",
+        done: true,
+        ts: "2026-08-15T21:00:00.000Z",
+      }).type,
+    ).toBe("chat_reply");
   });
 
   test("parseClientMessage THROWS on an unknown type; safeParse reports failure", () => {
@@ -55,6 +65,16 @@ describe("ServerMessage discriminated union (server → agent)", () => {
     expect(parseServerMessage(aLease).type).toBe("lease");
     expect(parseServerMessage({ type: "cancel", run_id: "run-1" }).type).toBe("cancel");
     expect(parseServerMessage({ type: "register_reject", reason: "revoked" }).type).toBe("register_reject");
+    expect(
+      parseServerMessage({
+        type: "chat_send",
+        run_id: "run-1",
+        message_id: "msg-1",
+        message: "hi",
+        sent_by: "user:mrbaizor",
+        ts: "2026-08-15T21:00:00.000Z",
+      }).type,
+    ).toBe("chat_send");
   });
 
   test("a lease round-trips WITH and WITHOUT the optional T2-05 task field", () => {
@@ -123,10 +143,13 @@ describe("message catalogues", () => {
     expect(CLIENT_MESSAGE_TYPES.length).toBe(ClientMessage.options.length);
     expect(new Set(CLIENT_MESSAGE_TYPES).size).toBe(CLIENT_MESSAGE_TYPES.length);
     // Base v0.3.0 types + the department-mesh (0.4.0) runner→cloud additions
-    // (08-protocol-delta.md §5): ready, accept, reject, lease_renew, event, artifact.
+    // (08-protocol-delta.md §5): ready, accept, reject, lease_renew, event,
+    // artifact + the a3-protocol-chat-frames (0.9.0) runner→cloud addition:
+    // chat_reply (streamed reply to a chat_send, M6/R5b).
     expect([...CLIENT_MESSAGE_TYPES].sort()).toEqual(
       [
         "accept",
+        "chat_reply",
         "heartbeat",
         "needs_input",
         "register",
@@ -147,11 +170,13 @@ describe("message catalogues", () => {
     expect(new Set(SERVER_MESSAGE_TYPES).size).toBe(SERVER_MESSAGE_TYPES.length);
     // Base v0.3.0 types + the department-mesh (0.4.0) cloud→runner additions
     // (08-protocol-delta.md §4): config_update, offer, message, cancel,
-    // lease_revoked, artifact_ack.
+    // lease_revoked, artifact_ack + the a3-protocol-chat-frames (0.9.0)
+    // cloud→runner addition: chat_send (run-bound text message, M6/R5b).
     expect([...SERVER_MESSAGE_TYPES].sort()).toEqual(
       [
         "answer",
         "cancel",
+        "chat_send",
         "heartbeat_ack",
         "lease",
         "register_ack",
