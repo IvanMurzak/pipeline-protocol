@@ -1,0 +1,43 @@
+ADDITIVE-POLICY.md
+  s_ed1b4ae4e5d986::t_0eb1b2d8ec02b4 218-252
+src/wire/server.ts
+  s_ed1b4ae4e5d986::t_66484ccedf8633 282-326
+  s_ed1b4ae4e5d986::t_94a2d202114866 281
+src/wire/client.test.ts
+  s_ed1b4ae4e5d986::t_0701734a0d7464 126-196
+  s_ed1b4ae4e5d986::t_e1b56b66d75e66 5
+src/wire/index.ts
+  s_ed1b4ae4e5d986::t_7bd086253aa2d6 84
+  s_ed1b4ae4e5d986::t_4c0ae349366a69 56
+  s_ed1b4ae4e5d986::t_494bd2f6377226 9,18
+src/wire/wire.test.ts
+  s_ed1b4ae4e5d986::t_5726d8338ec0b0 144-146,150,171-172,177
+  s_ed1b4ae4e5d986::t_a6ff2cfecd84f0 40-48
+  s_ed1b4ae4e5d986::t_3cb45d513ae6e5 67-75
+package.json
+  s_ed1b4ae4e5d986::t_7005c4e783ae69 3
+src/wire/envelope.ts
+  s_ed1b4ae4e5d986::t_1975525772d9b9 13-16
+src/wire/client.ts
+  s_ed1b4ae4e5d986::t_7565aaf1daf87a 101-137
+  s_ed1b4ae4e5d986::t_a093b4db89d772 99-100
+src/wire/server.test.ts
+  s_ed1b4ae4e5d986::t_a6fad991c72879 360-419
+  s_ed1b4ae4e5d986::t_91fcd7a169f58d 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e5a86a6b13484f2eba690fa4db5e1a0dc4986daa",
+  "prompts": {},
+  "sessions": {
+    "s_ed1b4ae4e5d986": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d065bda2-94f7-45db-b8f4-2da50c81020b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Ivan Murzak <Ivan.D.Murzak@gmail.com>"
+    }
+  }
+}
