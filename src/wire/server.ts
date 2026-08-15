@@ -7,11 +7,14 @@ import { wireVariant } from "./envelope.js";
  * SERVER → AGENT messages on `/agent/v1` (the control plane speaks to the
  * runner). The handshake replies (`register_ack` / `register_reject`) live in
  * `./handshake.ts`; this module owns the steady-state server messages: `lease`,
- * `answer`, `cancel`, `heartbeat_ack`, `upload_ack`.
+ * `answer`, `cancel`, `heartbeat_ack`, `upload_ack`, `chat_send`.
  *
  * REUSE (no divergent duplicates):
  *   - `answer`     embeds {@link AnswerMessageSchema} (`../records/answer`) verbatim.
  *   - `upload_ack` embeds {@link IngestBatchResponseSchema} (`../ingest/`) verbatim.
+ *   - `chat_send`  gated cloud-side on the runner's declared `register.chat_capable`
+ *     (`./handshake.ts`) — a runner that hasn't advertised the capability must
+ *     never receive one.
  */
 
 /** An optional server directive piggy-backed on a `heartbeat_ack`. `reregister`
@@ -279,6 +282,19 @@ export const AnswerDeliveryMessageSchema = wireVariant("answer", {
 export type AnswerDeliveryMessage = z.infer<typeof AnswerDeliveryMessageSchema>;
 
 /**
+ * Hard wire-level cap on a single `chat_send`/`chat_reply` chunk's text
+ * length (review finding A1). The department capability set declares its
+ * bound as a NEGOTIATED capability (`DeptCapabilitiesSchema.maxMessageBytes`,
+ * `../department/control.ts`) because department runtimes vary; the minimal
+ * chat channel (R5b) has no per-runtime capability negotiation surface at
+ * all, so this is a fixed SCHEMA bound instead — pinned once here so c4 and
+ * d6 don't each pick their own limit. Chosen generously for a chat turn
+ * (well above a typical multi-paragraph message) while still bounding
+ * worst-case frame size on a channel with no attachments.
+ */
+export const CHAT_MESSAGE_MAX_CHARS = 32_000 as const;
+
+/**
  * `chat_send` (server → agent) — deliver a run-bound TEXT chat message from the
  * cloud down to the runner's executor session (`pipeline-ui-v2` task
  * `a3-protocol-chat-frames`, design `02-target-architecture.md` M6, gate G1b).
@@ -286,15 +302,36 @@ export type AnswerDeliveryMessage = z.infer<typeof AnswerDeliveryMessageSchema>;
  * already bridges (M6: "reuses the relay bridge to the runner session ...
  * avoids a second transport") — never a separate chat-specific process. The
  * runner's reply/stream comes back as one or more `chat_reply` frames
- * (`./client.ts`); echo this message's envelope `id` on every `chat_reply`
- * chunk belonging to this turn, mirroring how `needs_input`/`answer` pair over
- * the correlation id (`./envelope.ts`).
+ * (`./client.ts`), each echoing this message's `message_id`.
+ *
+ * ── Turn identity (review B1) ────────────────────────────────────────────────
+ * `message_id` is a REQUIRED in-body identity, not the optional envelope `id`
+ * (`./envelope.ts`) — that field is documented there as "a routing aid, not a
+ * schema gate", so it cannot be the load-bearing key. This follows the repo's
+ * OWN precedent for exactly this problem: `needs_input`'s REQUIRED
+ * `question_id` (`./client.ts`) and `AnswerMessageSchema`'s REQUIRED
+ * `question_id` (`../records/answer.ts`) exist because a stale-answer race
+ * had to be detectable (spike-report G3/T1-13); `DeptMessageSchema` likewise
+ * requires `message_id` (`../department/task.ts`). Chat has the identical
+ * shape of problem one level up: `run_id` alone cannot distinguish two
+ * concurrent turns on the same run (two browser tabs, a double-clicked Send),
+ * cannot let a redelivered `chat_send` (F7's 202-queue-when-offline semantics,
+ * same as answers, mirror a WSS-flap resend) be recognized as a DUPLICATE
+ * rather than re-injected into the session a second time (07 T7 — a
+ * double-injected instruction is exactly the "steer an executor beyond the
+ * owner's intent" hazard), and cannot let the relay reject a reply to a
+ * SUPERSEDED turn. The natural idempotency key for de-duplication is
+ * `(run_id, message_id)`, the same shape as ingest's `(run_id, seq)`
+ * (`../ingest/`) — a receiver that has already seen a `(run_id, message_id)`
+ * pair treats a repeat as a no-op redelivery, never a second injection.
  *
  * ── Minimal channel (R5b) ────────────────────────────────────────────────────
  * Text only, bound to exactly ONE run's session: no attachment fields, no
- * history-backfill fields. `run_id` is the sole scoping key — a run has one
- * live executor session at a time, exactly as `needs_input`/`answer` key on
- * `run_id` alone with no separate `session_id`.
+ * history-backfill fields. `run_id` is the sole SESSION-scoping key — a run
+ * has one live executor session at a time, exactly as `needs_input`/`answer`
+ * key on `run_id` alone with no separate `session_id`. `message_id` scopes
+ * the TURN within that session (see above) — the two keys answer different
+ * questions and neither substitutes for the other.
  *
  * ── Authorization (07 §T7) ───────────────────────────────────────────────────
  * Chat rides the IDENTICAL authorization path as `needs_input.answer`
@@ -306,20 +343,34 @@ export type AnswerDeliveryMessage = z.infer<typeof AnswerDeliveryMessageSchema>;
  * (`../records/answer.ts`) — not a trust input. The runner still independently
  * rejects a frame for a run/session it does not own (07 T7: chat must not
  * steer an executor beyond the owner's intent) — a runner-side check, not a
- * schema-level one.
+ * schema-level one. Rejection is NOT silence: see `ChatReplyMessageSchema.error`
+ * (`./client.ts`, review B2) for the terminal frame the runner emits instead.
+ *
+ * ── Capability gate (review B3) ──────────────────────────────────────────────
+ * The cloud MUST NOT send `chat_send` to a runner that hasn't declared
+ * `register.chat_capable: true` (`./handshake.ts`) — see that field's doc for
+ * why this can't be inferred from a version number.
  */
 export const ChatSendMessageSchema = wireVariant("chat_send", {
   /** The run whose executor session receives this message (D4: run-bound only,
-   *  no free-floating chat). */
+   *  no free-floating chat). SESSION-scoping key — see the turn-identity note
+   *  above for how this differs from `message_id`. */
   run_id: z.string().min(1),
+  /** REQUIRED stable identity for this chat TURN (review B1) — echoed by every
+   *  `chat_reply` chunk that answers it. See the doc above for why this must
+   *  live in the body rather than riding the optional envelope `id`. */
+  message_id: z.string().min(1),
   /** The chat text to inject into the executor session. Text only (R5b) — no
-   *  attachment fields. */
-  message: z.string().min(1),
+   *  attachment fields. Bounded by {@link CHAT_MESSAGE_MAX_CHARS} (review A1). */
+  message: z.string().min(1).max(CHAT_MESSAGE_MAX_CHARS),
   /** WHO sent it — audit-log identity only (07 T7), not an authz assertion;
    *  the actual authorization check happened cloud-side before this frame was
    *  sent, exactly as for `AnswerMessageSchema.answered_by`. */
   sent_by: z.string().min(1),
-  /** ISO-8601 UTC time the message was sent. */
+  /** ISO-8601 UTC time the message was sent. Producer-stamped, DISPLAY-ONLY
+   *  (review A2): reassembly and delivery order follow stream/arrival order,
+   *  never a sort by `ts` — clock skew and same-millisecond chunks are both
+   *  realistic on this channel. */
   ts: z.string().datetime({ offset: true }),
 });
 export type ChatSendMessage = z.infer<typeof ChatSendMessageSchema>;

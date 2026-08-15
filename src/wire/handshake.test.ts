@@ -52,6 +52,29 @@ describe("register (agent → server handshake)", () => {
     const msg = RegisterMessageSchema.parse(register({ gpu_count: 4 }));
     expect((msg as Record<string, unknown>).gpu_count).toBe(4);
   });
+
+  // ── a3-protocol-chat-frames (review B3): OPTIONAL `chat_capable` ───────────
+
+  test("chat_capable is OPTIONAL: a register without it still parses and has no key", () => {
+    const msg = RegisterMessageSchema.parse(register());
+    expect(msg.chat_capable).toBeUndefined();
+    expect("chat_capable" in msg).toBe(false);
+  });
+
+  test("a pre-a3 register (no chat_capable) round-trips byte-identical (old readers unaffected)", () => {
+    const original = register();
+    const parsed = RegisterMessageSchema.parse(original);
+    expect(parsed as Record<string, unknown>).toEqual(original);
+  });
+
+  test("chat_capable: true/false are both accepted and round-trip", () => {
+    expect(RegisterMessageSchema.parse(register({ chat_capable: true })).chat_capable).toBe(true);
+    expect(RegisterMessageSchema.parse(register({ chat_capable: false })).chat_capable).toBe(false);
+  });
+
+  test("chat_capable rejects a non-boolean value", () => {
+    expect(RegisterMessageSchema.safeParse(register({ chat_capable: "yes" })).success).toBe(false);
+  });
 });
 
 describe("version negotiation (reuses isCompatible)", () => {

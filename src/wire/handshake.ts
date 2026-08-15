@@ -64,6 +64,29 @@ export const RegisterMessageSchema = wireVariant("register", {
    *  CAPABILITY, not a version gate ({@link isRegisterCompatible} is
    *  deliberately untouched by the mesh addition). */
   mesh_protocol: z.number().int().positive().optional(),
+  /**
+   * OPTIONAL capability flag (`a3-protocol-chat-frames`, ADDITIVE, review
+   * B3): `true` ⇒ this runner supports the P2.5 chat channel (`chat_send` /
+   * `chat_reply`, `./server.ts` / `./client.ts`) and will route an inbound
+   * `chat_send` into the run's executor session. CAPABILITY-KEYED, not
+   * version-inferred — the SAME posture this package already took twice for
+   * exactly this problem: `mesh_protocol` above ("a CAPABILITY, not a
+   * version gate") and `heartbeat.runs_authoritative`
+   * (`./client.ts`, "CAPABILITY-KEYED, not presence-keyed"). The nearest
+   * analogue — mid-task text delivered into a running process — is
+   * `department.message`, gated on a runtime's declared `midTaskInput`
+   * capability (`../department/control.ts`) rather than inferred from a
+   * version. The cloud MUST NOT infer chat support from `agent_version` or
+   * `protocol_version`: an old runner that has never heard of `chat_send`
+   * still parses it via the tolerant `AnyWireMessage` path
+   * (`pipeline-runner/src/core/wire.ts`) and silently drops it — the SAME
+   * observable failure as a rejected turn (review B2), with no trace at all.
+   * Absent/`false` ⇒ the cloud must not send `chat_send` to this runner
+   * (enforced d6-side); this is also the signal d6/e9 need to tell "chat
+   * unavailable — old runner" apart from "chat unavailable — offline"
+   * (`tasks/e9`).
+   */
+  chat_capable: z.boolean().optional(),
 });
 export type RegisterMessage = z.infer<typeof RegisterMessageSchema>;
 

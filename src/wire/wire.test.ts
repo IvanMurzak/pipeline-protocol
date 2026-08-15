@@ -41,6 +41,7 @@ describe("ClientMessage discriminated union (agent → server)", () => {
       parseClientMessage({
         type: "chat_reply",
         run_id: "run-1",
+        message_id: "msg-1",
         message: "hi",
         done: true,
         ts: "2026-08-15T21:00:00.000Z",
@@ -68,6 +69,7 @@ describe("ServerMessage discriminated union (server → agent)", () => {
       parseServerMessage({
         type: "chat_send",
         run_id: "run-1",
+        message_id: "msg-1",
         message: "hi",
         sent_by: "user:mrbaizor",
         ts: "2026-08-15T21:00:00.000Z",

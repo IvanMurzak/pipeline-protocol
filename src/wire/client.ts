@@ -2,15 +2,22 @@ import { z } from "zod";
 import { QuestionSchema } from "../common/question.js";
 import { IngestBatchRequestSchema } from "../ingest/index.js";
 import { wireVariant } from "./envelope.js";
+// Shared chat message-length bound (review A1) — defined alongside `chat_send`
+// in `./server.ts` (the frame's "primary" definition) and reused here so
+// `chat_send`/`chat_reply` share exactly one cap, never two.
+import { CHAT_MESSAGE_MAX_CHARS } from "./server.js";
 
 /**
  * AGENT → SERVER messages on `/agent/v1` (the runner is the client). The opening
  * `register` frame lives in `./handshake.ts`; this module owns the steady-state
- * client messages: `heartbeat`, `accept`, `needs_input`, `upload`, `run_status`.
+ * client messages: `heartbeat`, `accept`, `needs_input`, `upload`, `run_status`,
+ * `chat_reply`.
  *
  * REUSE (no divergent duplicates — see the T1-01 shapes this composes):
  *   - `needs_input` embeds the shared {@link QuestionSchema} (`../common/question`).
  *   - `upload`      embeds {@link IngestBatchRequestSchema} (`../ingest/`) verbatim.
+ *   - `chat_reply`  shares {@link CHAT_MESSAGE_MAX_CHARS} with `chat_send`
+ *     (`./server.ts`) — one length cap, not two.
  */
 
 /** Runner liveness/pause states surfaced on a heartbeat. `paused` is the
@@ -98,40 +105,95 @@ export const NeedsInputMessageSchema = wireVariant("needs_input", {
 export type NeedsInputMessage = z.infer<typeof NeedsInputMessageSchema>;
 
 /**
+ * The terminal-failure payload a `chat_reply` carries on its FINAL chunk when
+ * a turn cannot complete normally (review B2) — see {@link ChatReplyMessageSchema}
+ * `error` for when a runner sets this instead of staying silent. Nested object,
+ * so `.passthrough()` per ADDITIVE-POLICY rule 3. `code` is deliberately a
+ * lenient open string (rule 5), not a closed enum — mirrors
+ * `DeptFailedEventSchema.reason` (`../department/events.ts`): a future failure
+ * class needs no schema change to become parseable. Documented (not
+ * exhaustive) values: `"not_owned"` (the `chat_send` named a run/session this
+ * runner does not own — 07 T7), `"session_unavailable"` (the executor session
+ * is dead, parked past resume, or the run is already terminal),
+ * `"internal_error"` (an unexpected runner-side failure mid-stream).
+ */
+export const ChatReplyErrorSchema = z
+  .object({
+    /** Open, lenient failure class — see the documented values above. */
+    code: z.string().min(1),
+    /** Human-readable detail for logs / the composer's error state. */
+    message: z.string().min(1),
+  })
+  .passthrough();
+export type ChatReplyError = z.infer<typeof ChatReplyErrorSchema>;
+
+/**
  * `chat_reply` (agent → server) — the runner's executor-session reply to a
  * `chat_send` (`./server.ts`), STREAMED as one or more frames (`pipeline-ui-v2`
  * task `a3-protocol-chat-frames`, design `02-target-architecture.md` M6, gate
- * G1b). Echo the originating `chat_send`'s envelope `id` on every chunk so the
- * cloud can reassemble a turn — the same correlation-id convention
- * `needs_input`/`answer` use (`./envelope.ts`). `done: false` ⇒ more chunks
- * follow; `done: true` ⇒ this is the final chunk. A non-streaming runner sends
- * exactly ONE frame with `done: true`.
+ * G1b). `done: false` ⇒ more chunks follow; `done: true` ⇒ this is the final
+ * chunk. A non-streaming runner sends exactly ONE frame with `done: true`.
+ *
+ * ── Turn identity (review B1) ────────────────────────────────────────────────
+ * `message_id` REQUIRED-echoes the originating `chat_send.message_id`
+ * (`./server.ts`) on every chunk — NOT the optional envelope `id`
+ * (`./envelope.ts`, documented there as "a routing aid, not a schema gate").
+ * See `ChatSendMessageSchema`'s doc for the full precedent (`needs_input`'s
+ * `question_id`, `DeptMessageSchema.message_id`) and why an envelope-only key
+ * cannot disambiguate concurrent turns, detect a redelivered send, or let a
+ * reply to a superseded turn be rejected.
+ *
+ * ── Terminal failure (review B2) ─────────────────────────────────────────────
+ * Silence is NOT a valid rejection. If the runner cannot (or can no longer)
+ * service this turn — the `chat_send` named a run/session it does not own
+ * (07 T7), the executor session died mid-stream, or the run went terminal —
+ * it MUST emit a `chat_reply` with `done: true` and {@link error} populated,
+ * never simply stop sending frames. `error` absent ⇒ ordinary content (either
+ * a mid-stream chunk or a successful final chunk); `error` present ⇒ this IS
+ * the final chunk (implies `done: true`) and its `message` text, if any, is
+ * whatever partial content the runner managed before failing — the receiver
+ * must not treat prose alone (e.g. an apologetic final chunk with no `error`)
+ * as a machine-readable failure signal.
  *
  * ── Minimal channel (R5b) ────────────────────────────────────────────────────
  * Text only, bound to exactly ONE run's session: no attachment fields, no
- * history-backfill fields. `run_id` is the sole scoping key, mirroring
- * `needs_input`/`answer` (no separate `session_id`).
+ * history-backfill fields. `run_id` is the sole SESSION-scoping key, mirroring
+ * `needs_input`/`answer` (no separate `session_id`); `message_id` scopes the
+ * TURN (see above).
  *
  * ── Authorization (07 §T7) ───────────────────────────────────────────────────
- * The runner MUST reject (never emit a reply for) a `chat_send` naming a
- * run/session it does not own — chat must not steer an executor beyond the
- * owner's intent. `run_id` here is the runner's OWN declaration of which
- * session replied; it carries no authz weight by itself — the cloud
- * independently verifies run ownership/RLS scope before trusting it (never
- * trust client-declared state, 07 §Handling rules), exactly as it does for
- * `run_status`/`needs_input`.
+ * The runner MUST reject (never route into) a `chat_send` naming a run/session
+ * it does not own — chat must not steer an executor beyond the owner's intent
+ * — and signal that rejection via `error: { code: "not_owned", ... }` per the
+ * terminal-failure contract above, rather than silence. `run_id` here is the
+ * runner's OWN declaration of which session replied; it carries no authz
+ * weight by itself — the cloud independently verifies run ownership/RLS scope
+ * before trusting it (never trust client-declared state, 07 §Handling rules),
+ * exactly as it does for `run_status`/`needs_input`.
  */
 export const ChatReplyMessageSchema = wireVariant("chat_reply", {
   /** The run whose executor session this reply comes from (D4: run-bound
-   *  only). */
+   *  only). SESSION-scoping key — see the turn-identity note above. */
   run_id: z.string().min(1),
-  /** This chunk's reply text. May be empty on a pure completion sentinel
-   *  frame (`done: true` with no additional text). */
-  message: z.string(),
+  /** REQUIRED echo of the originating `chat_send.message_id` (review B1) —
+   *  every chunk of a turn's stream carries the same value. */
+  message_id: z.string().min(1),
+  /** This chunk's reply text. May be empty on a pure completion or error
+   *  sentinel frame (`done: true` with no additional text). Bounded by
+   *  {@link CHAT_MESSAGE_MAX_CHARS} (`./server.ts`, review A1). */
+  message: z.string().max(CHAT_MESSAGE_MAX_CHARS),
   /** `false` ⇒ more chunks follow this one; `true` ⇒ the final chunk of this
-   *  reply. A non-streaming runner always sends a single `done: true` frame. */
+   *  reply (success OR failure — see `error` below). A non-streaming runner
+   *  always sends a single `done: true` frame. */
   done: z.boolean(),
-  /** ISO-8601 UTC time this chunk was emitted. */
+  /** OPTIONAL terminal-failure marker (review B2) — see the doc above. Present
+   *  ⇒ this is the FINAL chunk of a turn that did not complete normally;
+   *  absent/null ⇒ ordinary content. */
+  error: ChatReplyErrorSchema.nullable().optional(),
+  /** ISO-8601 UTC time this chunk was emitted. Producer-stamped, DISPLAY-ONLY
+   *  (review A2): reassembly and delivery order follow stream/arrival order,
+   *  never a sort by `ts` — clock skew and same-millisecond chunks are both
+   *  realistic on this channel. */
   ts: z.string().datetime({ offset: true }),
 });
 export type ChatReplyMessage = z.infer<typeof ChatReplyMessageSchema>;

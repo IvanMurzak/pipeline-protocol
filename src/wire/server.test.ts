@@ -4,6 +4,7 @@ import { IngestBatchResponseSchema } from "../ingest/index.js";
 import {
   AnswerDeliveryMessageSchema,
   CancelMessageSchema,
+  CHAT_MESSAGE_MAX_CHARS,
   ChatSendMessageSchema,
   ExecutionOverridesSchema,
   HeartbeatAckMessageSchema,
@@ -358,62 +359,107 @@ describe("answer (server → agent — REUSES AnswerMessage, no duplicate)", () 
 });
 
 describe("chat_send (a3-protocol-chat-frames — cloud → runner, run-bound text message)", () => {
-  test("valid chat_send carries run_id + message + audit identity + ts", () => {
-    const c = ChatSendMessageSchema.parse({
+  /** A representative valid `chat_send`. */
+  function chatSend(overrides: Record<string, unknown> = {}) {
+    return {
       type: "chat_send",
       id: "chat-1",
       run_id: "run-7",
+      message_id: "msg-abc",
       message: "What's the current status?",
       sent_by: "user:mrbaizor",
       ts: "2026-08-15T21:00:00.000Z",
-    });
+      ...overrides,
+    };
+  }
+
+  test("valid chat_send carries run_id + message_id + message + audit identity + ts", () => {
+    const c = ChatSendMessageSchema.parse(chatSend());
     expect(c.run_id).toBe("run-7");
+    expect(c.message_id).toBe("msg-abc");
     expect(c.message).toBe("What's the current status?");
     expect(c.sent_by).toBe("user:mrbaizor");
   });
 
-  test("rejects a missing run_id, empty message, or missing sent_by/ts", () => {
+  test("rejects a missing run_id, missing/empty message_id, empty message, or missing sent_by/ts", () => {
+    const noRunId = chatSend();
+    delete (noRunId as Record<string, unknown>).run_id;
+    expect(ChatSendMessageSchema.safeParse(noRunId).success).toBe(false);
+
+    const noMessageId = chatSend();
+    delete (noMessageId as Record<string, unknown>).message_id;
+    expect(ChatSendMessageSchema.safeParse(noMessageId).success).toBe(false); // B1: message_id is REQUIRED
+    expect(ChatSendMessageSchema.safeParse(chatSend({ message_id: "" })).success).toBe(false);
+
+    expect(ChatSendMessageSchema.safeParse(chatSend({ message: "" })).success).toBe(false); // empty message — text only, no empty sends
+
+    const noSentBy = chatSend();
+    delete (noSentBy as Record<string, unknown>).sent_by;
+    expect(ChatSendMessageSchema.safeParse(noSentBy).success).toBe(false);
+
+    const noTs = chatSend();
+    delete (noTs as Record<string, unknown>).ts;
+    expect(ChatSendMessageSchema.safeParse(noTs).success).toBe(false);
+  });
+
+  // ── B1: message_id is the load-bearing turn identity, not the envelope id ──
+
+  test("message_id (not the optional envelope id) is what distinguishes two concurrent turns on the same run", () => {
+    const turnA = ChatSendMessageSchema.parse(chatSend({ message_id: "turn-a", message: "First question" }));
+    const turnB = ChatSendMessageSchema.parse(chatSend({ message_id: "turn-b", message: "Second question" }));
+    expect(turnA.run_id).toBe(turnB.run_id); // same session
+    expect(turnA.message_id).not.toBe(turnB.message_id); // distinct turns, unambiguously
+  });
+
+  test("a chat_send parses with NO envelope id at all — message_id alone still identifies the turn", () => {
+    const noEnvelopeId = chatSend();
+    delete (noEnvelopeId as Record<string, unknown>).id;
+    const c = ChatSendMessageSchema.parse(noEnvelopeId);
+    expect(c.id).toBeUndefined();
+    expect(c.message_id).toBe("msg-abc");
+  });
+
+  test("(run_id, message_id) is a stable pair a receiver can dedupe a redelivered send on", () => {
+    // Two identical frames sharing (run_id, message_id) parse to structurally
+    // equal turns — the natural idempotency key, mirroring ingest's
+    // (run_id, seq) pair. Redelivery detection itself is a receiver-side
+    // concern (F7); this only pins that the KEY is present and stable.
+    const first = ChatSendMessageSchema.parse(chatSend());
+    const redelivered = ChatSendMessageSchema.parse(chatSend());
+    expect([first.run_id, first.message_id]).toEqual([redelivered.run_id, redelivered.message_id]);
+  });
+
+  // ── A1: message length bound ────────────────────────────────────────────────
+
+  test("message is bounded by CHAT_MESSAGE_MAX_CHARS", () => {
+    expect(ChatSendMessageSchema.safeParse(chatSend({ message: "x".repeat(CHAT_MESSAGE_MAX_CHARS) })).success).toBe(
+      true,
+    );
     expect(
-      ChatSendMessageSchema.safeParse({ type: "chat_send", message: "hi", sent_by: "u", ts: "2026-08-15T21:00:00.000Z" })
-        .success,
-    ).toBe(false); // missing run_id
-    expect(
-      ChatSendMessageSchema.safeParse({
-        type: "chat_send",
-        run_id: "run-7",
-        message: "",
-        sent_by: "u",
-        ts: "2026-08-15T21:00:00.000Z",
-      }).success,
-    ).toBe(false); // empty message — text only, no empty sends
-    expect(
-      ChatSendMessageSchema.safeParse({ type: "chat_send", run_id: "run-7", message: "hi", ts: "2026-08-15T21:00:00.000Z" })
-        .success,
-    ).toBe(false); // missing sent_by
-    expect(
-      ChatSendMessageSchema.safeParse({ type: "chat_send", run_id: "run-7", message: "hi", sent_by: "u" }).success,
-    ).toBe(false); // missing ts
+      ChatSendMessageSchema.safeParse(chatSend({ message: "x".repeat(CHAT_MESSAGE_MAX_CHARS + 1) })).success,
+    ).toBe(false);
   });
 
   test("no attachment / history-backfill fields are part of the schema (R5b minimal channel) — passthrough still tolerates a newer peer's addition", () => {
-    const c = ChatSendMessageSchema.parse({
-      type: "chat_send",
-      run_id: "run-7",
-      message: "hi",
-      sent_by: "u",
-      ts: "2026-08-15T21:00:00.000Z",
-      attachments: ["from-a-newer-peer"],
-    });
+    const c = ChatSendMessageSchema.parse(chatSend({ attachments: ["from-a-newer-peer"] }));
     expect((c as Record<string, unknown>).attachments).toEqual(["from-a-newer-peer"]);
   });
 
+  // ── B4 fix: assert EACH forbidden authz-shaped key individually, never a
+  // single `arrayContaining`-negation check (which passes as soon as just ONE
+  // listed key is missing — verified vacuous by the review, not "contains none
+  // of these" as the name misleadingly suggests). ──────────────────────────────
+
   test("sent_by carries no role/permission/org claim — a plain identity string, not an authz assertion (07 T7)", () => {
-    // The schema does not define (and therefore does not require or specially
-    // interpret) any authz-shaped field alongside sent_by — it is exactly as
-    // opaque as AnswerMessageSchema.answered_by.
-    expect(Object.keys(ChatSendMessageSchema.shape)).toEqual(
-      expect.not.arrayContaining(["role", "permission", "org_id", "authz"]),
-    );
+    const shapeKeys = Object.keys(ChatSendMessageSchema.shape);
+    expect(shapeKeys).not.toContain("role");
+    expect(shapeKeys).not.toContain("permission");
+    expect(shapeKeys).not.toContain("org_id");
+    expect(shapeKeys).not.toContain("authz");
+    // Belt-and-suspenders: the intersection with the forbidden set is empty,
+    // so this fails loudly if ANY of them is later added, not just all four.
+    const forbidden = ["role", "permission", "org_id", "authz"];
+    expect(forbidden.filter((k) => shapeKeys.includes(k))).toEqual([]);
   });
 });
 
