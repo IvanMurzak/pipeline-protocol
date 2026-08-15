@@ -200,13 +200,17 @@ doc `02-target-architecture.md` §"Unified status model").
   `deriveRunState(input)`, so CLI, runner, cloud API and web derive the same
   state from a cloud-DB row, a CLI `drive` final-JSON status, or a
   journal/drive-snapshot signal instead of each redefining the mapping. New
-  module, new exports only — nothing existing changes shape. `outcome:
-  "blocked"` is documented here as an accepted value of the already-OPEN
-  `run_status` message's `outcome` string field (`src/wire/client.ts:143`);
-  the `phase` enum on that same message (`src/wire/client.ts:24`) stays
+  module, new exports only — nothing existing changes shape. No
+  approval-schema change: `NeedsInputMessageSchema` already embeds
+  `question.approval` (`common/question.ts:59`, `.passthrough()`).
+- **`src/wire/client.ts`: `RUN_STATUS_OUTCOME_BLOCKED`** — a new exported
+  literal (`"blocked"`) plus a doc-comment update on
+  `RunStatusMessageSchema.outcome` documenting that value as an accepted
+  member of the already-OPEN `run_status` message's `outcome` string field.
+  The `phase` enum on that same message (`src/wire/client.ts:24`) stays
   CLOSED and unchanged, per rule 1 above (closed enums cannot grow
-  additively). No approval-schema change: `NeedsInputMessageSchema` already
-  embeds `question.approval` (`common/question.ts:59`, `.passthrough()`).
+  additively) — a doc-only change plus one new constant, no field's type or
+  requiredness changed.
 
 New exports only; `PROTOCOL_VERSION` stays `1` and `EVENT_SCHEMA_VERSION`
 stays `4` — no message type or envelope field changed on the wire.

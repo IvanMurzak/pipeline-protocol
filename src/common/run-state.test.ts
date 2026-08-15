@@ -10,6 +10,7 @@ import {
   RUN_STATE_FALLBACK,
   RUN_STATES,
   type RunState,
+  type RunStateInput,
 } from "./run-state.js";
 
 /**
@@ -17,6 +18,12 @@ import {
  * against `deriveRunState` for all three input sources it accepts (cloud DB,
  * CLI `drive` final-JSON, journal/drive-snapshot) — plus the unknown-input
  * fallback and the NULL/absent-`awaiting_kind` rule (DoD, 04 §4.7).
+ *
+ * Also covers the fix-round-1 findings from the high-depth PR review (#18):
+ * B1 (journal `approval` is an object, never a boolean), B2 (`ended` with a
+ * missing/unrecognized `outcome` is terminal `"failed"`, not the fallback),
+ * B3 (`manager.stopped` agrees with the cloud column), and A1 (the typed
+ * `RunStateInput` overload).
  */
 
 describe("RUN_STATES — the closed 7-state public vocabulary (D12)", () => {
@@ -34,6 +41,18 @@ describe("RUN_STATES — the closed 7-state public vocabulary (D12)", () => {
 
   test("the fallback state is itself a member of the closed vocabulary", () => {
     expect(RUN_STATES).toContain(RUN_STATE_FALLBACK);
+  });
+});
+
+describe("deriveRunState — the typed RunStateInput overload (review A1)", () => {
+  test("a properly-shaped RunStateInput type-checks and derives correctly", () => {
+    const typed: RunStateInput = { source: "cloud", status: "created" };
+    expect(deriveRunState(typed)).toBe("queued");
+  });
+
+  test("an unvalidated `unknown` value still derives correctly via the second overload", () => {
+    const fromWire: unknown = JSON.parse('{"source":"cloud","status":"running"}');
+    expect(deriveRunState(fromWire)).toBe("running");
   });
 });
 
@@ -82,6 +101,16 @@ describe("deriveRunState — cloud DB (status/outcome + awaiting_kind)", () => {
     for (const outcome of failingOutcomes) {
       expect(deriveRunState({ source: "cloud", status: "ended", outcome })).toBe("failed");
     }
+  });
+
+  test("ended + outcome ABSENT -> failed, matching the cloud's own `outcome ?? \"failed\"` default (review B2)", () => {
+    expect(deriveRunState({ source: "cloud", status: "ended" })).toBe("failed");
+  });
+
+  test("ended + an unrecognized future outcome -> failed, never a live/fallback state (review B2)", () => {
+    expect(
+      deriveRunState({ source: "cloud", status: "ended", outcome: "not-a-real-outcome" }),
+    ).toBe("failed");
   });
 
   test("every AWAITING_KINDS member round-trips through its own row", () => {
@@ -156,17 +185,48 @@ describe("deriveRunState — journal / drive-snapshot signal", () => {
     }
   });
 
-  test("awaiting_input event, no approval -> needs-input", () => {
-    expect(deriveRunState({ source: "journal", event: "awaiting_input" })).toBe("needs-input");
-    expect(deriveRunState({ source: "journal", event: "awaiting_input", approval: false })).toBe(
-      "needs-input",
-    );
+  // ── B1: the journal `approval` marker is the real wire OBJECT shape
+  // (`AwaitingInputData.question.approval`, an `ApprovalSchema`), never a
+  // boolean — a prior revision typed it `boolean` and checked `=== true`,
+  // which silently read a genuine approval-gate object as falsy.
+
+  test("awaiting_input event, question WITHOUT approval -> needs-input", () => {
+    expect(
+      deriveRunState({ source: "journal", event: "awaiting_input", question: { text: "ok?" } }),
+    ).toBe("needs-input");
   });
 
-  test("awaiting_input event, with approval -> needs-approval", () => {
-    expect(deriveRunState({ source: "journal", event: "awaiting_input", approval: true })).toBe(
-      "needs-approval",
-    );
+  test("awaiting_input event, question ABSENT -> needs-input", () => {
+    expect(deriveRunState({ source: "journal", event: "awaiting_input" })).toBe("needs-input");
+  });
+
+  test("awaiting_input event, question: null -> needs-input", () => {
+    expect(
+      deriveRunState({ source: "journal", event: "awaiting_input", question: null }),
+    ).toBe("needs-input");
+  });
+
+  test("awaiting_input event, question.approval an EMPTY object (still present) -> needs-approval", () => {
+    // Presence, not content, is the signal — an approval object with no
+    // populated fields yet still means "this is a gate" (mirrors the CLI
+    // variant's identical presence check).
+    expect(
+      deriveRunState({
+        source: "journal",
+        event: "awaiting_input",
+        question: { text: "ok?", approval: {} },
+      }),
+    ).toBe("needs-approval");
+  });
+
+  test("awaiting_input event, question.approval a real ApprovalSchema object -> needs-approval", () => {
+    expect(
+      deriveRunState({
+        source: "journal",
+        event: "awaiting_input",
+        question: { text: "deploy to prod?", approval: { required_role: "admin" } },
+      }),
+    ).toBe("needs-approval");
   });
 
   test("blocker.delegated / blocker.polling -> blocked", () => {
@@ -175,10 +235,21 @@ describe("deriveRunState — journal / drive-snapshot signal", () => {
     }
   });
 
-  test("pipeline.halted / run.halted -> failed", () => {
+  test("pipeline.halted / run.halted / manager.stopped -> failed", () => {
+    expect(JOURNAL_FAILED_EVENTS).toEqual(["pipeline.halted", "run.halted", "manager.stopped"]);
     for (const event of JOURNAL_FAILED_EVENTS) {
       expect(deriveRunState({ source: "journal", event })).toBe("failed");
     }
+  });
+
+  test("manager.stopped -> failed, agreeing with the cloud column's outcome:'stopped' -> failed (review B3)", () => {
+    // Cloud ingest ends a `manager.stopped` run with `outcome: "stopped"`,
+    // which the cloud-DB column above maps to `"failed"` — the journal
+    // column must give the SAME public state for the SAME underlying run.
+    expect(deriveRunState({ source: "journal", event: "manager.stopped" })).toBe(
+      deriveRunState({ source: "cloud", status: "ended", outcome: "stopped" }),
+    );
+    expect(deriveRunState({ source: "journal", event: "manager.stopped" })).toBe("failed");
   });
 
   test("pipeline.completed / run.completed -> done", () => {
@@ -213,11 +284,13 @@ describe("deriveRunState — unknown-input fallback (documented, tested)", () =>
     );
   });
 
-  test("cloud row: status 'ended' with an unrecognized/absent outcome -> RUN_STATE_FALLBACK", () => {
-    expect(deriveRunState({ source: "cloud", status: "ended" })).toBe(RUN_STATE_FALLBACK);
-    expect(deriveRunState({ source: "cloud", status: "ended", outcome: "not-a-real-outcome" })).toBe(
-      RUN_STATE_FALLBACK,
-    );
+  test("the fallback does NOT apply to a recognized terminal status with missing detail (review B2)", () => {
+    // `status: "ended"` positively asserts the run is over — it must resolve
+    // to a terminal state (`"failed"`), never RUN_STATE_FALLBACK. Covered in
+    // depth in the cloud describe block above; asserted here too so the
+    // fallback's own boundary is pinned next to its other edge cases.
+    expect(deriveRunState({ source: "cloud", status: "ended" })).not.toBe(RUN_STATE_FALLBACK);
+    expect(deriveRunState({ source: "cloud", status: "ended" })).toBe("failed");
   });
 
   test("RUN_STATE_FALLBACK constant is 'running'", () => {

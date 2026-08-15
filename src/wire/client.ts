@@ -138,10 +138,32 @@ export const RunStatusMessageSchema = wireVariant("run_status", {
   /** The job this run executes (from the lease), if the runner tracks it. */
   job_id: z.string().min(1).optional(),
   phase: z.enum(RUN_STATUS_PHASES),
-  /** Terminal outcome for `completed` (e.g. "completed" | "depth-exhausted") —
-   *  mirrors `RunCompletedData.outcome`. Null/absent while `started`. */
+  /**
+   * Terminal outcome for `completed` (e.g. "completed" | "depth-exhausted") —
+   * mirrors `RunCompletedData.outcome`. Null/absent while `started`.
+   *
+   * ALSO carries the BLOCKED signal on a `halted` phase (`pipeline-ui-v2`
+   * task `a1-protocol-run-state`, `02-target-architecture.md` §"Unified
+   * status model" wire note): a runner reports `phase:"halted",
+   * outcome:"blocked"` for an exit-3/blocker-delegated classification.
+   * `phase` (above) is a CLOSED enum that cannot grow additively (rule 1,
+   * `ADDITIVE-POLICY.md`), so `"blocked"` rides this already-OPEN string
+   * field instead of a new phase value — see {@link RUN_STATUS_OUTCOME_BLOCKED}
+   * for the literal. An old cloud that doesn't know this value degrades to
+   * today's plain-halted handling; a new cloud maps it to the public
+   * `"blocked"` run state (`../common/run-state.ts`, `deriveRunState`).
+   */
   outcome: z.string().nullable().optional(),
   /** Halt reason for `halted` — mirrors `RunHaltedData.halt_reason`. */
   halt_reason: z.string().nullable().optional(),
 });
 export type RunStatusMessage = z.infer<typeof RunStatusMessageSchema>;
+
+/**
+ * The documented `outcome` value that carries the BLOCKED signal on a
+ * `phase:"halted"` `run_status` frame (see the field's doc comment above).
+ * Exported so the runner (which sets it) and the cloud API (which reads it)
+ * both reference the one literal instead of each hard-coding `"blocked"`
+ * (review of task `a1-protocol-run-state`, finding B4).
+ */
+export const RUN_STATUS_OUTCOME_BLOCKED = "blocked" as const;
