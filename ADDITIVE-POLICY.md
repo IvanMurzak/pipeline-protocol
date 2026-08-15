@@ -215,6 +215,41 @@ doc `02-target-architecture.md` §"Unified status model").
 New exports only; `PROTOCOL_VERSION` stays `1` and `EVENT_SCHEMA_VERSION`
 stays `4` — no message type or envelope field changed on the wire.
 
+## What 0.9.0 added over 0.8.0 (all additive)
+
+Codified from the `pipeline-ui-v2` design (task `a3-protocol-chat-frames`, design
+doc `02-target-architecture.md` §M6, gate G1b) — the P2.5 run-bound chat
+channel: text messages to/from the runner's executor session, riding the
+existing relay transport (no second transport, M6).
+
+- **`src/wire/server.ts`: `ChatSendMessageSchema` (`chat_send`, server → agent)**
+  — a brand-new message type: deliver a run-bound text chat message down to the
+  runner's executor session. `{ run_id, message, sent_by, ts }`, built with
+  `wireVariant()` (so `.passthrough()` per rule 3) and appended to
+  `SERVER_MESSAGE_VARIANTS` (`src/wire/index.ts`). Minimal channel (R5b): text
+  only, no attachment fields, no history-backfill fields; `run_id` is the sole
+  scoping key, mirroring `needs_input`/`answer`. `sent_by` is an AUDIT-LOG
+  identity only, the same class of field as `AnswerMessageSchema.answered_by`
+  — the schema carries no client-asserted authz data; chat rides the identical
+  authorization path as `needs_input.answer` (07 §T7), enforced cloud-side
+  before the frame is sent.
+- **`src/wire/client.ts`: `ChatReplyMessageSchema` (`chat_reply`, agent → server)**
+  — a brand-new message type: the runner's executor-session reply to a
+  `chat_send`, STREAMED as one or more frames via `done: false`/`true`.
+  `{ run_id, message, done, ts }`, built with `wireVariant()` and appended to
+  `CLIENT_MESSAGE_VARIANTS`. Same minimal-channel constraints as `chat_send`.
+  The envelope's existing OPTIONAL correlation `id` (`src/wire/envelope.ts`) —
+  already used by `lease`/`accept`, `heartbeat`/`heartbeat_ack`,
+  `needs_input`/`answer` — is REUSED to pair a `chat_send` with its
+  `chat_reply` chunk(s); no new correlation mechanism was introduced.
+
+Both are brand-new message `type`s (old consumers ignore an unknown type, rule
+2) on already-`.passthrough()` messages (rule 3); no existing message's fields
+changed shape. `PROTOCOL_VERSION` stays `1` and `EVENT_SCHEMA_VERSION` stays
+`4` — no closed enum grew (the `phase`/`RUNNER_STATUSES`/`RUN_STATUS_PHASES`/
+`HEARTBEAT_DIRECTIVES` enums are all untouched) and no field's requiredness or
+type changed.
+
 ## How a breaking change (major bump) would be handled
 
 A change that cannot be expressed additively (removing/renaming a field,

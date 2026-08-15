@@ -98,6 +98,45 @@ export const NeedsInputMessageSchema = wireVariant("needs_input", {
 export type NeedsInputMessage = z.infer<typeof NeedsInputMessageSchema>;
 
 /**
+ * `chat_reply` (agent → server) — the runner's executor-session reply to a
+ * `chat_send` (`./server.ts`), STREAMED as one or more frames (`pipeline-ui-v2`
+ * task `a3-protocol-chat-frames`, design `02-target-architecture.md` M6, gate
+ * G1b). Echo the originating `chat_send`'s envelope `id` on every chunk so the
+ * cloud can reassemble a turn — the same correlation-id convention
+ * `needs_input`/`answer` use (`./envelope.ts`). `done: false` ⇒ more chunks
+ * follow; `done: true` ⇒ this is the final chunk. A non-streaming runner sends
+ * exactly ONE frame with `done: true`.
+ *
+ * ── Minimal channel (R5b) ────────────────────────────────────────────────────
+ * Text only, bound to exactly ONE run's session: no attachment fields, no
+ * history-backfill fields. `run_id` is the sole scoping key, mirroring
+ * `needs_input`/`answer` (no separate `session_id`).
+ *
+ * ── Authorization (07 §T7) ───────────────────────────────────────────────────
+ * The runner MUST reject (never emit a reply for) a `chat_send` naming a
+ * run/session it does not own — chat must not steer an executor beyond the
+ * owner's intent. `run_id` here is the runner's OWN declaration of which
+ * session replied; it carries no authz weight by itself — the cloud
+ * independently verifies run ownership/RLS scope before trusting it (never
+ * trust client-declared state, 07 §Handling rules), exactly as it does for
+ * `run_status`/`needs_input`.
+ */
+export const ChatReplyMessageSchema = wireVariant("chat_reply", {
+  /** The run whose executor session this reply comes from (D4: run-bound
+   *  only). */
+  run_id: z.string().min(1),
+  /** This chunk's reply text. May be empty on a pure completion sentinel
+   *  frame (`done: true` with no additional text). */
+  message: z.string(),
+  /** `false` ⇒ more chunks follow this one; `true` ⇒ the final chunk of this
+   *  reply. A non-streaming runner always sends a single `done: true` frame. */
+  done: z.boolean(),
+  /** ISO-8601 UTC time this chunk was emitted. */
+  ts: z.string().datetime({ offset: true }),
+});
+export type ChatReplyMessage = z.infer<typeof ChatReplyMessageSchema>;
+
+/**
  * `upload` (agent → server) — a batched, idempotent event upload.
  *
  * ── Idempotency + ordering (spike-report G1) ────────────────────────────────

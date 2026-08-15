@@ -4,6 +4,7 @@ import { IngestBatchResponseSchema } from "../ingest/index.js";
 import {
   AnswerDeliveryMessageSchema,
   CancelMessageSchema,
+  ChatSendMessageSchema,
   ExecutionOverridesSchema,
   HeartbeatAckMessageSchema,
   LeaseMessageSchema,
@@ -353,6 +354,66 @@ describe("answer (server → agent — REUSES AnswerMessage, no duplicate)", () 
         answer: { run_id: "run-7", answer: "x", answered_by: "u", ts: "2026-07-11T21:00:00.000Z" },
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("chat_send (a3-protocol-chat-frames — cloud → runner, run-bound text message)", () => {
+  test("valid chat_send carries run_id + message + audit identity + ts", () => {
+    const c = ChatSendMessageSchema.parse({
+      type: "chat_send",
+      id: "chat-1",
+      run_id: "run-7",
+      message: "What's the current status?",
+      sent_by: "user:mrbaizor",
+      ts: "2026-08-15T21:00:00.000Z",
+    });
+    expect(c.run_id).toBe("run-7");
+    expect(c.message).toBe("What's the current status?");
+    expect(c.sent_by).toBe("user:mrbaizor");
+  });
+
+  test("rejects a missing run_id, empty message, or missing sent_by/ts", () => {
+    expect(
+      ChatSendMessageSchema.safeParse({ type: "chat_send", message: "hi", sent_by: "u", ts: "2026-08-15T21:00:00.000Z" })
+        .success,
+    ).toBe(false); // missing run_id
+    expect(
+      ChatSendMessageSchema.safeParse({
+        type: "chat_send",
+        run_id: "run-7",
+        message: "",
+        sent_by: "u",
+        ts: "2026-08-15T21:00:00.000Z",
+      }).success,
+    ).toBe(false); // empty message — text only, no empty sends
+    expect(
+      ChatSendMessageSchema.safeParse({ type: "chat_send", run_id: "run-7", message: "hi", ts: "2026-08-15T21:00:00.000Z" })
+        .success,
+    ).toBe(false); // missing sent_by
+    expect(
+      ChatSendMessageSchema.safeParse({ type: "chat_send", run_id: "run-7", message: "hi", sent_by: "u" }).success,
+    ).toBe(false); // missing ts
+  });
+
+  test("no attachment / history-backfill fields are part of the schema (R5b minimal channel) — passthrough still tolerates a newer peer's addition", () => {
+    const c = ChatSendMessageSchema.parse({
+      type: "chat_send",
+      run_id: "run-7",
+      message: "hi",
+      sent_by: "u",
+      ts: "2026-08-15T21:00:00.000Z",
+      attachments: ["from-a-newer-peer"],
+    });
+    expect((c as Record<string, unknown>).attachments).toEqual(["from-a-newer-peer"]);
+  });
+
+  test("sent_by carries no role/permission/org claim — a plain identity string, not an authz assertion (07 T7)", () => {
+    // The schema does not define (and therefore does not require or specially
+    // interpret) any authz-shaped field alongside sent_by — it is exactly as
+    // opaque as AnswerMessageSchema.answered_by.
+    expect(Object.keys(ChatSendMessageSchema.shape)).toEqual(
+      expect.not.arrayContaining(["role", "permission", "org_id", "authz"]),
+    );
   });
 });
 

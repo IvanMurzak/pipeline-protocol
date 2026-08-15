@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { IngestBatchRequestSchema } from "../ingest/index.js";
 import {
   AcceptMessageSchema,
+  ChatReplyMessageSchema,
   HeartbeatMessageSchema,
   NeedsInputMessageSchema,
   RUN_STATUS_OUTCOME_BLOCKED,
@@ -119,6 +120,77 @@ describe("upload (event upload — REUSES IngestBatchRequest, no duplicate)", ()
     ).toBe(false);
     // Same payload validates directly against the ingest schema too (parity).
     expect(IngestBatchRequestSchema.safeParse({ run_id: "run-7", events: [{ seq: -1, payload: {} }] }).success).toBe(false);
+  });
+});
+
+describe("chat_reply (a3-protocol-chat-frames — runner → cloud, streamed reply to chat_send)", () => {
+  test("a single non-streaming reply (done: true) parses and echoes run_id", () => {
+    const r = ChatReplyMessageSchema.parse({
+      type: "chat_reply",
+      id: "chat-1",
+      run_id: "run-7",
+      message: "Sure — here's the current status.",
+      done: true,
+      ts: "2026-08-15T21:00:00.000Z",
+    });
+    expect(r.run_id).toBe("run-7");
+    expect(r.done).toBe(true);
+  });
+
+  test("a streamed reply may send an intermediate chunk with done: false", () => {
+    const chunk = ChatReplyMessageSchema.parse({
+      type: "chat_reply",
+      id: "chat-1",
+      run_id: "run-7",
+      message: "Sure — here's the ",
+      done: false,
+      ts: "2026-08-15T21:00:00.000Z",
+    });
+    expect(chunk.done).toBe(false);
+  });
+
+  test("an empty message is valid on a pure completion sentinel frame (done: true, no more text)", () => {
+    expect(
+      ChatReplyMessageSchema.safeParse({
+        type: "chat_reply",
+        run_id: "run-7",
+        message: "",
+        done: true,
+        ts: "2026-08-15T21:00:00.000Z",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects a missing run_id, a missing done, or a non-boolean done", () => {
+    expect(
+      ChatReplyMessageSchema.safeParse({ type: "chat_reply", message: "hi", done: true, ts: "2026-08-15T21:00:00.000Z" })
+        .success,
+    ).toBe(false); // missing run_id
+    expect(
+      ChatReplyMessageSchema.safeParse({ type: "chat_reply", run_id: "run-7", message: "hi", ts: "2026-08-15T21:00:00.000Z" })
+        .success,
+    ).toBe(false); // missing done
+    expect(
+      ChatReplyMessageSchema.safeParse({
+        type: "chat_reply",
+        run_id: "run-7",
+        message: "hi",
+        done: "yes",
+        ts: "2026-08-15T21:00:00.000Z",
+      }).success,
+    ).toBe(false); // non-boolean done
+  });
+
+  test("no attachment / history-backfill fields are part of the schema (R5b minimal channel) — passthrough still tolerates a newer peer's addition", () => {
+    const r = ChatReplyMessageSchema.parse({
+      type: "chat_reply",
+      run_id: "run-7",
+      message: "hi",
+      done: true,
+      ts: "2026-08-15T21:00:00.000Z",
+      attachments: ["from-a-newer-peer"],
+    });
+    expect((r as Record<string, unknown>).attachments).toEqual(["from-a-newer-peer"]);
   });
 });
 

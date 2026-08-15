@@ -6,6 +6,7 @@ import {
 } from "./handshake.js";
 import {
   AcceptMessageSchema,
+  ChatReplyMessageSchema,
   HeartbeatMessageSchema,
   NeedsInputMessageSchema,
   RunStatusMessageSchema,
@@ -14,6 +15,7 @@ import {
 import {
   AnswerDeliveryMessageSchema,
   CancelMessageSchema,
+  ChatSendMessageSchema,
   HeartbeatAckMessageSchema,
   LeaseMessageSchema,
   UploadAckMessageSchema,
@@ -51,6 +53,7 @@ export const CLIENT_MESSAGE_VARIANTS = [
   NeedsInputMessageSchema,
   UploadMessageSchema,
   RunStatusMessageSchema,
+  ChatReplyMessageSchema,
   ...DEPT_CLIENT_VARIANTS,
 ] as const;
 
@@ -78,6 +81,7 @@ export const SERVER_MESSAGE_VARIANTS = [
   CancelMessageSchema,
   HeartbeatAckMessageSchema,
   UploadAckMessageSchema,
+  ChatSendMessageSchema,
   ...DEPT_SERVER_VARIANTS,
 ] as const;
 

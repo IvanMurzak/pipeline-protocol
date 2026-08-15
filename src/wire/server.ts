@@ -279,6 +279,52 @@ export const AnswerDeliveryMessageSchema = wireVariant("answer", {
 export type AnswerDeliveryMessage = z.infer<typeof AnswerDeliveryMessageSchema>;
 
 /**
+ * `chat_send` (server → agent) — deliver a run-bound TEXT chat message from the
+ * cloud down to the runner's executor session (`pipeline-ui-v2` task
+ * `a3-protocol-chat-frames`, design `02-target-architecture.md` M6, gate G1b).
+ * The runner feeds `message` into the SAME session `needs_input`/`answer`
+ * already bridges (M6: "reuses the relay bridge to the runner session ...
+ * avoids a second transport") — never a separate chat-specific process. The
+ * runner's reply/stream comes back as one or more `chat_reply` frames
+ * (`./client.ts`); echo this message's envelope `id` on every `chat_reply`
+ * chunk belonging to this turn, mirroring how `needs_input`/`answer` pair over
+ * the correlation id (`./envelope.ts`).
+ *
+ * ── Minimal channel (R5b) ────────────────────────────────────────────────────
+ * Text only, bound to exactly ONE run's session: no attachment fields, no
+ * history-backfill fields. `run_id` is the sole scoping key — a run has one
+ * live executor session at a time, exactly as `needs_input`/`answer` key on
+ * `run_id` alone with no separate `session_id`.
+ *
+ * ── Authorization (07 §T7) ───────────────────────────────────────────────────
+ * Chat rides the IDENTICAL authorization path as `needs_input.answer`
+ * (`relay/service.ts:250-259`, `relay/store.ts:62-69` precedent) — enforced
+ * CLOUD-SIDE before this frame is ever sent, never re-derived from the wire.
+ * This schema deliberately carries NO client-asserted authz data (no role, no
+ * permission grant, no org/session claim): `sent_by` below is an AUDIT-LOG
+ * identity only — the same class of field as `AnswerMessageSchema.answered_by`
+ * (`../records/answer.ts`) — not a trust input. The runner still independently
+ * rejects a frame for a run/session it does not own (07 T7: chat must not
+ * steer an executor beyond the owner's intent) — a runner-side check, not a
+ * schema-level one.
+ */
+export const ChatSendMessageSchema = wireVariant("chat_send", {
+  /** The run whose executor session receives this message (D4: run-bound only,
+   *  no free-floating chat). */
+  run_id: z.string().min(1),
+  /** The chat text to inject into the executor session. Text only (R5b) — no
+   *  attachment fields. */
+  message: z.string().min(1),
+  /** WHO sent it — audit-log identity only (07 T7), not an authz assertion;
+   *  the actual authorization check happened cloud-side before this frame was
+   *  sent, exactly as for `AnswerMessageSchema.answered_by`. */
+  sent_by: z.string().min(1),
+  /** ISO-8601 UTC time the message was sent. */
+  ts: z.string().datetime({ offset: true }),
+});
+export type ChatSendMessage = z.infer<typeof ChatSendMessageSchema>;
+
+/**
  * `cancel` (server → agent) — cancel a run (user-requested, budget cap, or a
  * superseding trigger). The runner stops `drive` and reports a terminal
  * `run_status`. Fire-and-forget (no reply frame required).
