@@ -1,0 +1,30 @@
+src/wire/client.ts
+  s_ed1b4ae4e5d986::t_43b1cb32c01046 141-155,161-169
+ADDITIVE-POLICY.md
+  s_ed1b4ae4e5d986::t_bb4eaaef019924 203-210,212-213
+src/common/run-state.test.ts
+  s_ed1b4ae4e5d986::t_f1c5131bc4fc69 13,21-26,47-58,106-115,188-199,203-229,238-239,245-254,287-293
+src/common/run-state.ts
+  s_ed1b4ae4e5d986::t_b090e5bace302b 74-79
+  s_ed1b4ae4e5d986::t_96e430557c55a9 106-119,138-142,153-154,157-167
+  s_ed1b4ae4e5d986::t_d2d49b4b1c342c 175-187,189-195,199-210,224-231,240,257,268-278,280-281
+src/wire/client.test.ts
+  s_ed1b4ae4e5d986::t_2c4d19baf4602d 7
+  s_ed1b4ae4e5d986::t_70fe75eeb58128 139-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "884dd15d0a1b97ef2ddf59af08436b2e56ec747b",
+  "prompts": {},
+  "sessions": {
+    "s_ed1b4ae4e5d986": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d065bda2-94f7-45db-b8f4-2da50c81020b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Ivan Murzak <Ivan.D.Murzak@gmail.com>"
+    }
+  }
+}
