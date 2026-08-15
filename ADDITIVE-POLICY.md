@@ -190,6 +190,31 @@ that gained a type without gaining a requirement — rule 1 and rule 2 above.
 `PROTOCOL_VERSION` stays `1` and `EVENT_SCHEMA_VERSION` stays `4`: no message
 type was added, removed or changed on the wire.
 
+## What 0.8.0 added over 0.7.0 (all additive)
+
+Codified from the `pipeline-ui-v2` design (task `a1-protocol-run-state`, design
+doc `02-target-architecture.md` §"Unified status model").
+
+- **`src/common/run-state.ts`** — the single 7-state PUBLIC run vocabulary
+  (`RUN_STATES` / `RunState`, D12) plus its canonical, pure mapper
+  `deriveRunState(input)`, so CLI, runner, cloud API and web derive the same
+  state from a cloud-DB row, a CLI `drive` final-JSON status, or a
+  journal/drive-snapshot signal instead of each redefining the mapping. New
+  module, new exports only — nothing existing changes shape. No
+  approval-schema change: `NeedsInputMessageSchema` already embeds
+  `question.approval` (`common/question.ts:59`, `.passthrough()`).
+- **`src/wire/client.ts`: `RUN_STATUS_OUTCOME_BLOCKED`** — a new exported
+  literal (`"blocked"`) plus a doc-comment update on
+  `RunStatusMessageSchema.outcome` documenting that value as an accepted
+  member of the already-OPEN `run_status` message's `outcome` string field.
+  The `phase` enum on that same message (`src/wire/client.ts:24`) stays
+  CLOSED and unchanged, per rule 1 above (closed enums cannot grow
+  additively) — a doc-only change plus one new constant, no field's type or
+  requiredness changed.
+
+New exports only; `PROTOCOL_VERSION` stays `1` and `EVENT_SCHEMA_VERSION`
+stays `4` — no message type or envelope field changed on the wire.
+
 ## How a breaking change (major bump) would be handled
 
 A change that cannot be expressed additively (removing/renaming a field,

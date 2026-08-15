@@ -15,6 +15,10 @@ import { EventEnvelope, type Event } from "./events/types.js";
 // question shape via `./common/question.js`.)
 export * from "./version.js";
 export * from "./common/question.js";
+// The unified 7-state public run vocabulary + canonical mapper (D12, task
+// `a1-protocol-run-state`): every consumer derives `RunState` from here, never
+// redefines it. See `./common/run-state.ts`.
+export * from "./common/run-state.js";
 export * from "./events/index.js";
 export * from "./records/index.js";
 export * from "./ingest/index.js";

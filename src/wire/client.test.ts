@@ -4,6 +4,7 @@ import {
   AcceptMessageSchema,
   HeartbeatMessageSchema,
   NeedsInputMessageSchema,
+  RUN_STATUS_OUTCOME_BLOCKED,
   RunStatusMessageSchema,
   UploadMessageSchema,
 } from "./client.js";
@@ -134,5 +135,22 @@ describe("run_status (mirrors run.started/completed/halted events)", () => {
 
   test("rejects an out-of-enum phase", () => {
     expect(RunStatusMessageSchema.safeParse({ type: "run_status", run_id: "run-7", phase: "running" }).success).toBe(false);
+  });
+
+  // ── pipeline-ui-v2 task a1-protocol-run-state (review B4): the closed
+  // `phase` enum cannot grow, so a runner's blocker/exit-3 classification
+  // rides the already-open `outcome` string field as `phase:"halted",
+  // outcome:"blocked"` instead of a new phase value.
+
+  test("phase:'halted' + outcome:RUN_STATUS_OUTCOME_BLOCKED parses (the documented blocked signal)", () => {
+    expect(RUN_STATUS_OUTCOME_BLOCKED).toBe("blocked");
+    const blocked = RunStatusMessageSchema.parse({
+      type: "run_status",
+      run_id: "run-7",
+      phase: "halted",
+      outcome: RUN_STATUS_OUTCOME_BLOCKED,
+    });
+    expect(blocked.phase).toBe("halted");
+    expect(blocked.outcome).toBe("blocked");
   });
 });
