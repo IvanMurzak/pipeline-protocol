@@ -50,6 +50,68 @@ Within a major (`PROTOCOL_VERSION`, currently **1**):
    fields are validated leniently (`string | null`) rather than as closed enums,
    to never reject a valid-but-newer value.
 
+### Sanctioned exception to rule 1 — the lease `task` widening (0.10.0)
+
+Rule 1 forbids repurposing a field's meaning within a major. `0.10.0` widens the
+documented meaning of `LeaseMessageSchema.task` (`src/wire/server.ts`): a `task`
+riding a lease that names a **real** pipeline is now a documented, legal shape
+(the text is *delivered* to the run as `${run.task}`, never BM25-matched)
+instead of only the task-dispatch shape the prose described. This is recorded
+here as a **sanctioned exception**, with the argument stated rather than
+asserted:
+
+1. **Nothing in the schema moved.** `task` is still `LeaseTaskSchema.optional()`;
+   `LeaseTaskSchema` is still the same four fields with the same types
+   (`task_id` / `title` still `z.string().min(1)`) and still ends in
+   `.passthrough()`; its container `LeaseMessageSchema` is still built by
+   `wireVariant()` and there is no `refine` / `superRefine` anywhere in
+   `src/wire/`. `PROTOCOL_VERSION` stays `1`; `EVENT_SCHEMA_VERSION` stays `4`.
+   The release is verifiable as doc-only rather than merely asserted to be:
+   build both revisions with comments stripped and the emitted code is the same
+   bytes —
+
+   ```sh
+   bunx tsc -p tsconfig.build.json --removeComments --outDir /tmp/nc-old   # at v0.9.0
+   bunx tsc -p tsconfig.build.json --removeComments --outDir /tmp/nc-new   # at v0.10.0
+   diff -r -x '*.map' /tmp/nc-old /tmp/nc-new                              # exit 0
+   ```
+
+   Every emitted `.js` and `.d.ts` matches (`wire/server.js`
+   `sha256 ed19eab1ac1db25dca81cc36e9a613e0a930042cacdf1bd9931b2600e73b8d5d`
+   on both). Only the two `.map` files differ, and only in line numbers —
+   longer comments move the source lines they point at. Note this is a
+   VERIFICATION build: the published `dist` keeps its comments, which is how
+   the widened prose reaches consumers at all.
+2. **No old consumer's parse result changes.** Every frame that validated on
+   0.9.0 validates on 0.10.0 and parses to the identical value, on every input —
+   necessarily, since the executable code is the same bytes. Rule 2 ("old
+   consumers ignore what they don't know") is not even exercised: there is
+   nothing new on the wire to ignore.
+3. **The widening only makes legal a shape old consumers already accepted
+   silently — which is precisely the hazard, not a reason to skip the note.** A
+   lease naming a real pipeline *and* carrying `task` has always parsed cleanly:
+   `task` is optional and the container is `.passthrough()`, so no version of
+   this package has ever rejected it. What was missing was a consumer that did
+   anything with it, and prose that admitted the shape existed. Writing it down
+   is what turns silent acceptance into a contract a producer can rely on and a
+   consumer can be held to.
+4. **`f1b` is the change that makes the shape honest** — the
+   `@baizor/pipeline-runner` release that adds `DriveTarget.task` and makes
+   `buildDriveArgs` emit `--task` on every invocation (start / resume / answer),
+   blank-guarded. **A deployed runner predating `f1b` parses the frame cleanly
+   and discards the text**: it drives the named pipeline and the user's task
+   input silently disappears — a run that looks successful while throwing the
+   input away. That is legal on this wire and wrong for the user, which is why
+   the runner ships and is tarball-verified *before* any producer starts setting
+   `task` on a fixed-pipeline dispatch. A producer must know its fleet delivers
+   the text; the protocol cannot tell it.
+
+This exception covers that shape and nothing else. It is admissible because the
+widening is *additive in behaviour*: a shape that was accepted-but-undefined
+becomes accepted-and-defined, and no previously-valid frame becomes invalid or
+parses differently. A change that failed either of those two tests would **not**
+qualify and would need the major bump described at the bottom of this file.
+
 ### Two version numbers
 
 | Constant | Meaning | Value |
@@ -288,6 +350,43 @@ and `EVENT_SCHEMA_VERSION` stays `4` — no closed enum grew (the
 `REGISTER_REJECT_REASONS` enums are all untouched; `ChatReplyErrorSchema.code`
 is deliberately an open string, never a closed enum, exactly so a future
 failure class needs no schema change).
+
+## What 0.10.0 added over 0.9.0 (doc-only — no schema change at all)
+
+Codified from the `concept-parity` design (task `f1-protocol-doc-release`, design
+doc `02-target-architecture.md` §6 "F1 — the task field reaches the runner",
+owner decision O5). This release changes **no executable code**: every `z.`
+expression in `src/wire/` is byte-identical to 0.9.0, and the emitted
+`wire/server.js` compiled with `--removeComments` hashes the same before and
+after (see §"Sanctioned exception to rule 1" above). What changed is the shipped
+**contract**.
+
+- **`src/wire/server.ts`: `LeaseMessageSchema`'s `task` prose widened** from an
+  equivalence to three enumerated lease shapes: (1) the
+  `TASK_PIPELINE_UNRESOLVED` sentinel + `task` — task-dispatch, BM25-resolved on
+  the runner, unchanged; (2) a **named** pipeline + `task` — a fixed-pipeline
+  lease whose task text is *delivered* to the run (`pipeline drive --task`
+  writes `.runtime/<run>/task.md` and exposes it as the built-in `${run.task}`)
+  and is never used for matching; (3) `task` absent — the T2-03 lease,
+  byte-for-byte unchanged. The old prose said a present `task` *"turns a lease
+  into a task-dispatch"*, which left shape 2 undocumented-but-accepted.
+- **`src/wire/server.ts`: `LeaseTaskSchema`'s own doc comment** given the same
+  widening, plus its four field comments. `task_id` and `title` stay
+  `z.string().min(1)` — so a fixed-pipeline producer must still supply both (a
+  run id and a derived title suffice) — and `labels` is stated to be **inert**
+  on shape 2, since there is no BM25 query to hint.
+- **`src/wire/server.ts`: `TASK_PIPELINE_UNRESOLVED`'s doc comment** now states
+  its implication as explicitly ONE-WAY: sentinel ⇒ `task`, never
+  `task` ⇒ sentinel. The sentinel direction is unchanged and still binding.
+- **This file** — §"Sanctioned exception to rule 1 — the lease `task` widening"
+  under the rules above, recording why a widening of meaning is admissible here
+  and naming `f1b` as the runner release that makes the shape honest.
+
+`PROTOCOL_VERSION` stays `1` and `EVENT_SCHEMA_VERSION` stays `4`. Because this
+package's `files` field is `["dist", "ADDITIVE-POLICY.md", "README.md"]`, `src/`
+is **not** published — the widened prose ships in `dist/wire/server.d.ts` (tsc
+preserves JSDoc on declarations), which is where a tarball verification must
+read it.
 
 ## How a breaking change (major bump) would be handled
 
