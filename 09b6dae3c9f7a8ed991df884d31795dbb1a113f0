@@ -1,0 +1,95 @@
+.github/workflows/ci.yml
+  s_8c19f166a0a4cd::t_248db07231ec7f 1-23
+ADDITIVE-POLICY.md
+  s_364be739bc892c::t_a1559d459cde89 1-97
+LICENSE
+  s_8c19f166a0a4cd::t_93f021ba4f3b4e 1-21
+README.md
+  s_8c19f166a0a4cd::t_3e1e2b81588529 1-64
+bun.lock
+  s_364be739bc892c::t_472270ea8c46d8 1-29
+package.json
+  s_364be739bc892c::t_5254f2801fcced 1-45
+src/common/outcomes.ts
+  s_364be739bc892c::t_4194f3ffd8396b 1-17
+src/common/question.test.ts
+  s_364be739bc892c::t_27e0c73581be73 1-62
+src/common/question.ts
+  s_364be739bc892c::t_00c9ee39253099 1-64
+src/events/envelope.ts
+  s_364be739bc892c::t_47fda9f14afdc1 1-103
+src/events/events.test.ts
+  s_364be739bc892c::t_57e28fb5788299 1-230
+src/events/index.ts
+  s_364be739bc892c::t_10033df6c2b7c3 1-2
+src/events/types.ts
+  s_364be739bc892c::t_1f8f2681f543c0 1-340
+src/index.ts
+  s_8c19f166a0a4cd::t_1c21760efb55c6 1-45
+src/ingest/index.ts
+  s_364be739bc892c::t_a2499427aed2d7 1-65
+src/ingest/ingest.test.ts
+  s_364be739bc892c::t_0876edc85742c6 1-56
+src/records/answer.ts
+  s_364be739bc892c::t_198a7465d0086f 1-27
+src/records/claude-envelope.ts
+  s_364be739bc892c::t_89579b537db0c5 1-41
+src/records/index.ts
+  s_364be739bc892c::t_9d5aab65b033c8 1-3
+src/records/records.test.ts
+  s_364be739bc892c::t_6c26985ca190dc 1-85
+src/records/step-record.ts
+  s_364be739bc892c::t_b550b507f9941e 1-46
+src/smoke.test.ts
+  s_8c19f166a0a4cd::t_66a173013a797d 1-54
+src/version.test.ts
+  s_364be739bc892c::t_6dc074cad74e04 1-17
+src/version.ts
+  s_8c19f166a0a4cd::t_21bdeed85b18a5 1-46
+src/wire/client.test.ts
+  s_364be739bc892c::t_79587233238555 1-108
+src/wire/client.ts
+  s_364be739bc892c::t_1367e43b4e6e06 1-132
+src/wire/envelope.ts
+  s_364be739bc892c::t_1643bde703207c 1-79
+src/wire/handshake.test.ts
+  s_364be739bc892c::t_47f56258a34a11 1-103
+src/wire/handshake.ts
+  s_364be739bc892c::t_0d5258e09d7eb2 1-112
+src/wire/index.ts
+  s_364be739bc892c::t_6717e2e680942e 1-115
+src/wire/server.test.ts
+  s_364be739bc892c::t_df479aee85646e 1-221
+src/wire/server.ts
+  s_364be739bc892c::t_978b080d3042a2 1-227
+src/wire/wire.test.ts
+  s_364be739bc892c::t_37c7794b89feff 1-142
+tsconfig.build.json
+  s_364be739bc892c::t_34c2dd3b6678d5 1-16
+tsconfig.json
+  s_364be739bc892c::t_bf529cc909877c 1-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "09b6dae3c9f7a8ed991df884d31795dbb1a113f0",
+  "prompts": {},
+  "sessions": {
+    "s_364be739bc892c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8f91f54-742b-4579-9e3a-eeb38012be81",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Ivan Murzak <Ivan.D.Murzak@gmail.com>"
+    },
+    "s_8c19f166a0a4cd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "df8298f2-beea-41ba-9052-0bf0c5fc46f2",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Ivan Murzak <Ivan.D.Murzak@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+package.json
+  s_ed1b4ae4e5d986::t_7679ddac238523 3
+src/common/run-state.ts
+  s_ed1b4ae4e5d986::t_51537c4eb20d82 19,92-236
+  s_ed1b4ae4e5d986::t_439f8ecec38803 1-18,20-91
+src/index.ts
+  s_ed1b4ae4e5d986::t_8211e1354fb742 18-21
+ADDITIVE-POLICY.md
+  s_ed1b4ae4e5d986::t_0991f3448a1e5a 193-213
+src/common/run-state.test.ts
+  s_ed1b4ae4e5d986::t_46fccb5e2a67f4 1-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "85baac3081338bb4edaed849422af632600b01d8",
+  "prompts": {},
+  "sessions": {
+    "s_ed1b4ae4e5d986": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d065bda2-94f7-45db-b8f4-2da50c81020b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Ivan Murzak <Ivan.D.Murzak@gmail.com>"
+    }
+  }
+}

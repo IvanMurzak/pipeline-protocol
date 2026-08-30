@@ -1,0 +1,24 @@
+src/ingest/ingest.test.ts
+  s_716a2f2d4693eb::t_47854bd8f194f4 57-265
+  s_716a2f2d4693eb::t_1a74556196ff98 2
+src/ingest/index.ts
+  s_716a2f2d4693eb::t_4669211c12c9fe 55-86
+  s_716a2f2d4693eb::t_92b090ef3b818b 24-30
+  s_716a2f2d4693eb::t_26bef64c86bf13 92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c0295df267913f54ac4778c80fe1d6ecdfd806cc",
+  "prompts": {},
+  "sessions": {
+    "s_716a2f2d4693eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "30b2d290-214d-4259-afb7-f324c8e3daac",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Murzak <Ivan.D.Murzak@gmail.com>"
+    }
+  }
+}
