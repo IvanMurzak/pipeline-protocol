@@ -57,28 +57,60 @@ export type PipelineRef = z.infer<typeof PipelineRefSchema>;
  * `min(1)` stays intact (additive — old fixed-pipeline leases are unchanged),
  * and `@`-prefixed so it can never collide with a real path under
  * `.pipeline/`.
+ *
+ * That implication is ONE-WAY, and always was: sentinel ⇒ `task`, but NOT
+ * `task` ⇒ sentinel. A lease naming a REAL pipeline may also carry `task` — as
+ * text DELIVERED to the run, never as match input. See
+ * {@link LeaseMessageSchema}'s doc for the three legal lease shapes; do not
+ * read a present `task` as evidence of this sentinel.
  */
 export const TASK_PIPELINE_UNRESOLVED = "@task" as const;
 
 /**
- * The natural-language WORK ITEM a task-dispatch lease carries (T2-05): exactly
- * what the runner's deterministic BM25 matcher needs to pick a pipeline from
- * the checked-out project's local manifests — the task identity plus the text
- * (`title` + `body`) and `labels` it matches on. NO pipeline identity here by
- * design: the match happens ON THE RUNNER, inside the lease (privacy: pipeline
- * sources/manifests never reach the cloud).
+ * The natural-language WORK ITEM a lease may carry (T2-05): the task identity
+ * plus its text (`title` + `body`) and the `labels` the job was matched on. NO
+ * pipeline identity here by design.
+ *
+ * ── One schema, two jobs (WIDENED — see {@link LeaseMessageSchema}) ─────────
+ * What this object is FOR is decided by the `pipeline_ref.pipeline` it rides
+ * with, not by its own contents. The schema is identical either way:
+ *
+ *   1. **With the {@link TASK_PIPELINE_UNRESOLVED} sentinel — MATCH input.**
+ *      Exactly what the runner's deterministic BM25 matcher needs to pick a
+ *      pipeline from the checked-out project's local manifests. The match
+ *      happens ON THE RUNNER, inside the lease (privacy: pipeline
+ *      sources/manifests never reach the cloud).
+ *   2. **With a NAMED pipeline — DELIVERY input only.** There is nothing to
+ *      resolve, so nothing is matched: the runner drives the named pipeline
+ *      and hands this text to the run (`pipeline drive --task`, which writes
+ *      `.runtime/<run>/task.md` and exposes it as the built-in `${run.task}`).
+ *      Shape 2 is what a CONFORMING runner does; an older one parses the frame
+ *      and drops the text — see {@link LeaseMessageSchema}'s doc and
+ *      `ADDITIVE-POLICY.md` before producing it.
+ *
+ * The REQUIRED fields are required on BOTH shapes, and stay that way: `task_id`
+ * and `title` are `z.string().min(1)`. Relaxing either — to admit a
+ * fixed-pipeline producer with no natural task id or title — would change what
+ * a consumer may assume from an already-validated frame, so it is not on the
+ * table: such a producer must still supply both (a run id and a derived title
+ * suffice). `labels` is INERT on shape 2 — there is no BM25 query to hint —
+ * and a producer with nothing to say there sends `[]`.
  */
 export const LeaseTaskSchema = z
   .object({
-    /** The control-plane task id (tasks.id) — echoes through run provenance. */
+    /** The control-plane task id (tasks.id) — echoes through run provenance.
+     *  Required on BOTH shapes above. */
     task_id: z.string().min(1),
-    /** Short human title (part of the BM25 match input). */
+    /** Short human title: part of the BM25 match input on a sentinel lease,
+     *  part of the delivered task text on a named-pipeline lease. Required on
+     *  both — a derived title is fine. */
     title: z.string().min(1),
-    /** The full natural-language task text the runner BM25-matches. May be
-     *  empty when the title says it all. */
+    /** The full natural-language task text — BM25-matched on a sentinel lease,
+     *  delivered to the run on a named-pipeline lease. May be empty when the
+     *  title says it all. */
     body: z.string(),
     /** Task labels (routing/BM25 hints) — the same values the job was
-     *  label-matched on. */
+     *  label-matched on. INERT on a named-pipeline lease: nothing to hint. */
     labels: z.array(z.string()),
   })
   .passthrough();
@@ -158,13 +190,37 @@ export type RunVariables = z.infer<typeof RunVariablesSchema>;
  * pipeline declared. Set the envelope `id` as the correlation id the runner
  * echoes on `accept`.
  *
- * ── Task-dispatch leases (T2-05, ADDITIVE) ──────────────────────────────────
- * An OPTIONAL `task` field ({@link LeaseTaskSchema}) turns a lease into a
- * task-dispatch: `pipeline_ref` then carries the checkout target only (repo +
- * ref, `pipeline` = {@link TASK_PIPELINE_UNRESOLVED}, `content_hash` null) and
- * the runner resolves the actual pipeline by BM25 over its local manifests
- * before driving. ABSENT ⇒ the fixed-pipeline lease of T2-03, byte-for-byte
- * unchanged (additive-only within protocol major 1 — no version bump).
+ * ── The `task` field — THREE lease shapes (T2-05, ADDITIVE; prose WIDENED) ──
+ * The OPTIONAL `task` field ({@link LeaseTaskSchema}) does NOT on its own
+ * decide what kind of lease this is. The PAIR (`pipeline_ref.pipeline`,
+ * `task`) does, and exactly three combinations are legal:
+ *
+ *   1. **Sentinel + `task` — task-dispatch** (T2-05, unchanged). `pipeline_ref`
+ *      carries the checkout target only (repo + ref, `pipeline` =
+ *      {@link TASK_PIPELINE_UNRESOLVED}, `content_hash` null) and the runner
+ *      resolves the actual pipeline by BM25 over its local manifests before
+ *      driving.
+ *   2. **Named pipeline + `task` — a fixed-pipeline lease carrying task text.**
+ *      `pipeline_ref.pipeline` names a real pipeline under `.pipeline/`, so
+ *      there is nothing to resolve. The runner drives THAT pipeline and
+ *      DELIVERS the text to the run: it passes it to `pipeline drive --task`,
+ *      which writes `.runtime/<run>/task.md` and exposes it as the built-in
+ *      `${run.task}`. The text is NEVER used for matching on this shape, and
+ *      the runner MUST NOT BM25-resolve.
+ *   3. **`task` absent — the fixed-pipeline lease of T2-03**, byte-for-byte
+ *      unchanged.
+ *
+ * Shape 2 is a WIDENING of this field's documented meaning, not a schema
+ * change: the field's type, its optionality and its `.passthrough()` container
+ * are all identical, so every frame that validated before still validates and
+ * parses to the same value. It is recorded as a sanctioned exception to rule 1
+ * of `ADDITIVE-POLICY.md` ("never repurpose a field's meaning") in that file's
+ * §"Sanctioned exception to rule 1 — the lease `task` widening"; read the
+ * compatibility note there before producing shape 2. The short version: a
+ * runner predating the release that implements delivery parses such a frame
+ * cleanly and silently DISCARDS the text — legal on the wire, wrong for the
+ * user — so a producer must know its fleet delivers it. Additive-only within
+ * protocol major 1 — no `PROTOCOL_VERSION` bump.
  *
  * ── Execution overrides (T3-06 prerequisite, ADDITIVE) ──────────────────────
  * An OPTIONAL `execution_overrides` field ({@link ExecutionOverridesSchema})
@@ -233,9 +289,11 @@ export const LeaseMessageSchema = wireVariant("lease", {
   /** Lease heartbeat TTL in seconds: if the runner misses it mid-run the run is
    *  marked interrupted (ARCHITECTURE §1). */
   lease_ttl_s: z.number().int().positive().optional(),
-  /** OPTIONAL task-dispatch work item (T2-05) — see the schema doc above.
-   *  Present ⇒ the runner BM25-resolves the pipeline locally; absent ⇒ the
-   *  T2-03 fixed-pipeline lease, unchanged. */
+  /** OPTIONAL work item (T2-05, prose widened) — see the three lease shapes in
+   *  the schema doc above. Present WITH the sentinel ref ⇒ the runner
+   *  BM25-resolves the pipeline locally; present WITH a named pipeline ⇒ no
+   *  matching at all, the text is delivered to the run as `${run.task}`;
+   *  absent ⇒ the T2-03 fixed-pipeline lease, unchanged. */
   task: LeaseTaskSchema.optional(),
   /** OPTIONAL per-run execution override (T3-06 prerequisite) — see the schema
    *  doc above. Present ⇒ the runner overrides the pipeline's declared
